@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 
 // Import your TensorGraph class and other necessary types
-import { TensorGraph, add, mult, sub, sine } from "@/lib/zen"; // Adjust the import path as needed
+import { TensorGraph, add, reduce, mult, sub, sine } from "@/lib/zen"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
 	const running = useRef(false);
@@ -31,24 +31,23 @@ const TensorPage: React.FC = () => {
 				const a = graph.input(6);
 				const b = graph.input(6);
 				const c = graph.input(1);
+				//const result = graph.output(
+				//	reduce("+")(add(a.getGen(), add(b.getGen(), c.getGen()))),
+				//);
 				const result = graph.output(
-					add(a.getGen(), add(b.getGen(), c.getGen())),
+					reduce("+")(mult(a.getGen(), add(b.getGen(), c.getGen()))),
 				);
 
 				graph.compile(result, 6);
 
 				let _a = new Float32Array([2, 4, 6, 7, 8, 9]);
-				const iterations = 10000;
 
-				for (let i = 0; i < iterations; i++) {
-					a.set(_a);
-					b.set([1, 2, 3, 4, 5, 6]);
-					c.set([3]);
+				a.set(_a);
+				b.set([1, 2, 3, 4, 5, 6]);
+				c.set([3]);
 
-					_a = await graph.run();
-					if (i % 100 === 0) console.log("i=%s", i, Array.from(_a));
-					setResult((o) => [...o, Array.from(_a)]);
-				}
+				_a = await graph.run();
+				setResult((o) => [...o, Array.from(_a)]);
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "An unknown error occurred",
