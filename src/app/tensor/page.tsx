@@ -6,6 +6,8 @@ import React, { useEffect, useState, useRef } from "react";
 import {
 	TensorGraph,
 	log2,
+	dot,
+	reshape,
 	add,
 	matmul,
 	reduce,
@@ -14,7 +16,7 @@ import {
 	sub,
 	sine,
 	sum,
-} from "@/lib/zen"; // Adjust the import path as needed
+} from "@/lib/index"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
 	const running = useRef(false);
@@ -33,20 +35,17 @@ const TensorPage: React.FC = () => {
 
 				const adapter = await navigator.gpu.requestAdapter();
 				if (!adapter) {
-					throw new Error("No appropriate GPUAdapter found.");
+					throw new Error("No appropriate GPUAdapter sounds");
 				}
 
 				const device = await adapter.requestDevice();
 				const g = new TensorGraph(device);
 
-				const a = g.input([2, 2]);
-				a.set([3, 2, 8, 7]);
-				const b = g.input([2, 2]);
-				b.set([9, 7, 2, 4]);
-				const c = g.input([2, 2]);
-				c.set([0, 0, 0, 10]);
-				const result = g.output(add(a, mean(log2(add(c, matmul(a, b))))));
-
+				const a = g.input([2, 2]).set([3, 2, 8, 7]);
+				const b = g.input([2, 2]).set([9, 7, 2, 4]);
+				const c = g.input([2, 2]).set([0, 0, 0, 10]);
+				const d = g.input([4]).set([0, 4, 4, 4]);
+				const result = g.output(dot(reshape(matmul(a, b), [4]), d));
 				g.compile(result, [2, 2]);
 
 				const r = await g.run();
