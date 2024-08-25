@@ -29,6 +29,7 @@ interface GenResult {
 	opType: OpType;
 	context: Context;
 	type: Type;
+	shape: number[]; // [rows, cols] for 2D, [length] for 1D
 }
 
 type Arg = Gen | InputPlaceholder;
@@ -42,12 +43,15 @@ interface Context {
 		variable: string,
 		code: string,
 		opType: OpType,
+		shape: number[],
 		...dependencies: GenResult[]
 	) => GenResult;
 	useContext: (opType: OpType) => Context;
 	getBindingIndex: (name: string) => number;
 	addInput: (x: string) => void;
 	addOutput: (x: string) => void;
+	getShape: (variable: string) => number[];
+	setShape: (variable: string, shape: number[]) => void;
 }
 
 class KernelContext implements Context {
@@ -60,6 +64,7 @@ class KernelContext implements Context {
 	parentContext: Context | undefined;
 	id: number;
 	tensorGraph: TensorGraph;
+	private shapes: Map<string, number[]> = new Map();
 
 	constructor(
 		opType: OpType,
@@ -70,6 +75,14 @@ class KernelContext implements Context {
 		this.tensorGraph = tensorGraph;
 		this.parentContext = parentContext;
 		this.id = counter++;
+	}
+
+	getShape(variable: string): number[] {
+		return this.shapes.get(variable) || [];
+	}
+
+	setShape(variable: string, shape: number[]) {
+		this.shapes.set(variable, shape);
 	}
 
 	gen(x: Arg): GenResult {
@@ -101,6 +114,7 @@ class KernelContext implements Context {
 				dependencies: [result],
 				opType: result.opType,
 				variable: `${outputName}`,
+				shape: this.tensorGraph.outputShape,
 				code: code,
 				type: Type.Tensor,
 			};
@@ -117,12 +131,14 @@ class KernelContext implements Context {
 		variable: string,
 		code: string,
 		opType: OpType,
+		shape: number[],
 		...dependencies: GenResult[]
 	): GenResult {
 		return {
 			context: this,
 			variable,
 			code,
+			shape,
 			dependencies,
 			opType,
 			type: Type.Scalar,
@@ -198,18 +214,19 @@ class KernelContext implements Context {
 class InputPlaceholder {
 	private name: string;
 	private graph: TensorGraph;
-	private size: number;
+	private shape: number[];
 
-	constructor(name: string, graph: TensorGraph, size: number) {
+	constructor(name: string, graph: TensorGraph, shape: number[]) {
 		this.name = name;
 		this.graph = graph;
-		this.size = size;
+		this.shape = shape;
 	}
 
 	set(data: number[] | Float32Array) {
-		if (data.length !== this.size) {
+		const size = this.shape.reduce((a, b) => a * b, 1);
+		if (data.length !== size) {
 			throw new Error(
-				`Input size mismatch. Expected ${this.size}, got ${data.length}`,
+				`Input size mismatch. Expected ${size}, got ${data.length}`,
 			);
 		}
 		this.graph.updateInput(this.name, data);
@@ -218,8 +235,9 @@ class InputPlaceholder {
 	getGen(): Gen {
 		return (context: Context) => {
 			context.addInput(this.name);
+			context.setShape(this.name, this.shape);
 			return {
-				...context.emit(`${this.name}`, "", OpType.Regular),
+				...context.emit(this.name, "", OpType.Regular, this.shape),
 				type: Type.Tensor,
 			};
 		};
@@ -349,14 +367,16 @@ export class TensorGraph {
 	private inputBuffers: Map<string, GPUBuffer> = new Map();
 	private inputCounter: number = 0;
 	outputSize: number = 0;
+	outputShape: number[] = [1];
 
 	constructor(device: GPUDevice) {
 		this.device = device;
 	}
 
-	input(size: number): InputPlaceholder {
+	input(shape: number[]): InputPlaceholder {
 		const inputName = `input_${this.inputCounter++}`;
-		const placeholder = new InputPlaceholder(inputName, this, size);
+		const size = shape.reduce((a, b) => a * b, 1);
+		const placeholder = new InputPlaceholder(inputName, this, shape);
 		this.inputData.set(inputName, new Float32Array(size));
 		return placeholder;
 	}
@@ -378,12 +398,14 @@ export class TensorGraph {
 			const [v] = context.useVariables("output");
 			context.addOutput(v);
 			const code = `${v}[index] = ${variable(result, Type.Scalar)};`;
-			return context.emit(v, code, OpType.Regular, result);
+			return context.emit(v, code, OpType.Regular, this.outputShape, result);
 		};
 	}
 
-	compile(graph: Gen, outputSize: number) {
-		this.outputSize = outputSize;
+	compile(graph: Gen, outputShape: number[]) {
+		this.outputShape = outputShape;
+		this.outputSize = outputShape.reduce((a, b) => a * b, 1);
+
 		this.contexts = [];
 		let currentContext = new KernelContext(OpType.Regular, this);
 		this.contexts.push(currentContext);
@@ -534,24 +556,81 @@ export class TensorGraph {
 	}
 }
 
-// Operations remain the same as in your original code
 const binaryOp =
 	(name: string, op: string) =>
 	(x: Arg, y: Arg) =>
 	(context: Context): GenResult => {
 		const parent = context;
+		console.log("binary op called name=", op);
 		context = context.useContext(OpType.Regular);
 		const _x = context.gen(x);
 		const _y = context.gen(y);
+
+		// Get shapes
+		const shapeX = _x.shape;
+		const shapeY = _y.shape;
+
+		console.log("shapes", _x.shape, _y.shape);
+
+		// Determine output shape
+		let outputShape: number[];
+		if (arraysEqual(shapeX, shapeY)) {
+			outputShape = shapeX;
+		} else if (isScalar(shapeX) || isScalar(shapeY)) {
+			outputShape = isScalar(shapeX) ? shapeY : shapeX;
+		} else {
+			console.log("incompatible");
+			throw new Error(
+				`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`,
+			);
+		}
+
 		const [variableName] = context.useVariables(`${name}_result`);
-		const code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)};`;
-		console.log("binarry op called parent=", parent);
-		console.log("binarry op called context=", context);
+
+		// Generate code with broadcasting if necessary
+		let code: string | undefined = undefined;
+		if (arraysEqual(shapeX, shapeY)) {
+			console.log("equal...", _x, _y);
+			code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)};`;
+		} else if (isScalar(shapeX)) {
+			code = `let ${variableName} = ${variable(_x)}[0] ${op} ${variable(_y)};`;
+		} else if (isScalar(shapeY)) {
+			code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)}[0];`;
+		}
+
+		console.log("code=", code);
+		if (!code) {
+			throw new Error("no code");
+		}
+
+		console.log("binary op called parent=", parent);
+		console.log("binary op called context=", context);
 		console.log(code);
-		const ret = context.emit(variableName, code, OpType.Regular, _x, _y);
+
+		const ret = context.emit(
+			variableName,
+			code,
+			OpType.Regular,
+			outputShape,
+			_x,
+			_y,
+		);
 		console.log(ret);
 		return ret;
 	};
+
+// Helper functions
+function arraysEqual(a: number[], b: number[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
+
+function isScalar(shape: number[]): boolean {
+	return shape.length === 1 && shape[0] === 1;
+}
 
 export const add = binaryOp("add", "+");
 export const mult = binaryOp("mult", "*");
@@ -573,7 +652,13 @@ export const reduce =
     }
   `;
 		console.log("reduce called with reductionContext", reductionContext);
-		return reductionContext.emit(variableName, code, OpType.Reduction, _x);
+		return reductionContext.emit(
+			variableName,
+			code,
+			OpType.Reduction,
+			_x.shape,
+			_x,
+		);
 	};
 
 export const sum = reduce("+");
@@ -597,17 +682,85 @@ export const mean =
     let ${resultVariable} = ${sumVariable} / f32(${countVariable});
   `;
 
-		return reductionContext.emit(resultVariable, code, OpType.Reduction, _x); // Mean always outputs a single value
+		console.log("mean generated=", _x);
+
+		return reductionContext.emit(
+			resultVariable,
+			code,
+			OpType.Reduction,
+			_x.shape,
+			_x,
+		); // Mean always outputs a single value
 	};
 
-export const sine =
-	(freq: Arg) =>
-	(context: Context): GenResult => {
-		context = context.useContext(OpType.Regular);
-		const [variableName] = context.useVariables("sine_wave");
-		const _freq = context.gen(freq);
-		const code = `
-    let ${variableName} = sin(${_freq.variable});
+export const func = (name: string) => {
+	return (freq: Arg) => {
+		return (context: Context): GenResult => {
+			context = context.useContext(OpType.Regular);
+			const [variableName] = context.useVariables(`${name}_result`);
+			const _freq = context.gen(freq);
+			const code = `
+    let ${variableName} = ${name}(${_freq.variable});
   `;
-		return context.emit(variableName, code, OpType.Regular, _freq);
+			console.log("sines dep=", _freq, code);
+			return context.emit(
+				variableName,
+				code,
+				OpType.Regular,
+				_freq.shape,
+				_freq,
+			);
+		};
+	};
+};
+
+export const sine = func("sin");
+export const log2 = func("log2");
+
+export const matmul =
+	(a: Arg, b: Arg) =>
+	(context: Context): GenResult => {
+		const _a = context.gen(a);
+		const _b = context.gen(b);
+
+		const shapeA = _a.shape;
+		const shapeB = _b.shape;
+
+		// Check if shapes are compatible for matrix multiplication
+		if (shapeA.length !== 2 || shapeB.length !== 2 || shapeA[1] !== shapeB[0]) {
+			throw new Error(
+				`Incompatible shapes for matrix multiplication: ${shapeA} and ${shapeB}`,
+			);
+		}
+
+		const outputShape = [shapeA[0], shapeB[1]];
+		const [resultVar, sum, M, N, K, row, col] = context.useVariables(
+			"matmul",
+			"sum",
+			"M",
+			"N",
+			"K",
+			"row",
+			"col",
+		);
+
+		const code = `
+let ${M} = ${shapeA[0]}u;
+let ${N} = ${shapeB[1]}u;
+let ${K} = ${shapeA[1]}u;
+
+let ${row} = index / ${N};
+let ${col} = index % ${N};
+
+var ${sum} = 0.0;
+for (var k = 0u; k < ${K}; k = k + 1u) {
+let a_idx = ${row} * ${K} + k;
+let b_idx = k * ${N} + ${col};
+${sum} = ${sum} + ${_a.variable}[a_idx] * ${_b.variable}[b_idx];
+    }
+
+let ${resultVar} = ${sum};
+  `;
+
+		return context.emit(resultVar, code, OpType.Regular, outputShape, _a, _b);
 	};

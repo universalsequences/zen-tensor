@@ -3,11 +3,22 @@
 import React, { useEffect, useState, useRef } from "react";
 
 // Import your TensorGraph class and other necessary types
-import { TensorGraph, add, reduce, mult, mean, sub, sine } from "@/lib/zen"; // Adjust the import path as needed
+import {
+	TensorGraph,
+	log2,
+	add,
+	matmul,
+	reduce,
+	mult,
+	mean,
+	sub,
+	sine,
+	sum,
+} from "@/lib/zen"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
 	const running = useRef(false);
-	const [result, setResult] = useState<number[][] | null>([]);
+	const [result, setResult] = useState<number[] | null>([]);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -26,21 +37,23 @@ const TensorPage: React.FC = () => {
 				}
 
 				const device = await adapter.requestDevice();
-				const graph = new TensorGraph(device);
+				const g = new TensorGraph(device);
 
-				const a = graph.input(8);
-				a.set([1, 1, 1, 1, 2, 2, 2, 2]);
-				const b = graph.input(8);
-				b.set([3, 3, 3, 3, 3, 3, 3, 3]);
-				const c = graph.input(1);
-				c.set([8]);
-				const result = graph.output(mean(mult(a, mult(c, b))));
+				const a = g.input([2, 2]);
+				a.set([3, 2, 8, 7]);
+				const b = g.input([2, 2]);
+				b.set([9, 7, 2, 4]);
+				const c = g.input([2, 2]);
+				c.set([0, 0, 0, 10]);
+				const result = g.output(add(a, mean(log2(add(c, matmul(a, b))))));
 
-				graph.compile(result, 8);
+				g.compile(result, [2, 2]);
 
-				const r = await graph.run();
-				setResult((o) => [...o, Array.from(r)]);
+				const r = await g.run();
+				console.log("result = ", Array.from(r), r);
+				setResult(Array.from(r));
 			} catch (err) {
+				console.log(err);
 				setError(
 					err instanceof Error ? err.message : "An unknown error occurred",
 				);
