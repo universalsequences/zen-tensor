@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 
 // Import your TensorGraph class and other necessary types
-import { TensorGraph, add, reduce, mult, sub, sine } from "@/lib/zen"; // Adjust the import path as needed
+import { TensorGraph, add, reduce, mult, mean, sub, sine } from "@/lib/zen"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
 	const running = useRef(false);
@@ -28,26 +28,18 @@ const TensorPage: React.FC = () => {
 				const device = await adapter.requestDevice();
 				const graph = new TensorGraph(device);
 
-				const a = graph.input(6);
-				const b = graph.input(6);
+				const a = graph.input(8);
+				a.set([1, 1, 1, 1, 2, 2, 2, 2]);
+				const b = graph.input(8);
+				b.set([3, 3, 3, 3, 3, 3, 3, 3]);
 				const c = graph.input(1);
-				//const result = graph.output(
-				//	reduce("+")(add(a.getGen(), add(b.getGen(), c.getGen()))),
-				//);
-				const result = graph.output(
-					reduce("+")(mult(a.getGen(), add(b.getGen(), c.getGen()))),
-				);
+				c.set([8]);
+				const result = graph.output(mean(mult(a, mult(c, b))));
 
-				graph.compile(result, 6);
+				graph.compile(result, 8);
 
-				let _a = new Float32Array([2, 4, 6, 7, 8, 9]);
-
-				a.set(_a);
-				b.set([1, 2, 3, 4, 5, 6]);
-				c.set([3]);
-
-				_a = await graph.run();
-				setResult((o) => [...o, Array.from(_a)]);
+				const r = await graph.run();
+				setResult((o) => [...o, Array.from(r)]);
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "An unknown error occurred",

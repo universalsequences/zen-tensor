@@ -6,18 +6,37 @@ enum OpType {
 type Gen = (context: Context) => GenResult;
 let counter = 0;
 
+enum Type {
+	Scalar = 0,
+	Tensor = 1,
+}
+
+const variable = (x: GenResult, type: Type = Type.Scalar, index?: string) => {
+	if (x.type === Type.Tensor && type === Type.Scalar) {
+		if (index) {
+			return `${x.variable}[${index}]`;
+		} else {
+			return `${x.variable}[index]`;
+		}
+	}
+	return x.variable;
+};
+
 interface GenResult {
 	variable: string;
 	code: string;
 	dependencies: GenResult[];
 	opType: OpType;
 	context: Context;
+	type: Type;
 }
+
+type Arg = Gen | InputPlaceholder;
 
 interface Context {
 	id: number;
 	parentContext: Context | undefined;
-	gen: (x: Gen) => GenResult;
+	gen: (x: Arg) => GenResult;
 	useVariables: (...names: string[]) => string[];
 	emit: (
 		variable: string,
@@ -53,8 +72,12 @@ class KernelContext implements Context {
 		this.id = counter++;
 	}
 
-	gen(x: Gen): GenResult {
-		const result = x(this);
+	gen(x: Arg): GenResult {
+		if (x instanceof InputPlaceholder) {
+			const rs = (x as InputPlaceholder).getGen()(this);
+			return rs;
+		}
+		const result = (x as Gen)(this);
 		if (result.opType !== this.opType) {
 			// We're crossing context boundaries
 			const outputName = `cross_context_output_${this.id}_${this.idx++}`;
@@ -66,7 +89,7 @@ class KernelContext implements Context {
 			);
 			this.addInput(outputName);
 			const buffer = this.tensorGraph.device.createBuffer({
-				size: 16,
+				size: this.tensorGraph.outputSize * 4,
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 			});
 			this.tensorGraph.inputBuffers.set(outputName, buffer);
@@ -77,8 +100,9 @@ class KernelContext implements Context {
 				context: result.context,
 				dependencies: [result],
 				opType: result.opType,
-				variable: outputName,
+				variable: `${outputName}`,
 				code: code,
+				type: Type.Tensor,
 			};
 		}
 		return result;
@@ -95,7 +119,14 @@ class KernelContext implements Context {
 		opType: OpType,
 		...dependencies: GenResult[]
 	): GenResult {
-		return { context: this, variable, code, dependencies, opType };
+		return {
+			context: this,
+			variable,
+			code,
+			dependencies,
+			opType,
+			type: Type.Scalar,
+		};
 	}
 
 	useContext(opType: OpType): Context {
@@ -187,23 +218,28 @@ class InputPlaceholder {
 	getGen(): Gen {
 		return (context: Context) => {
 			context.addInput(this.name);
-			return context.emit(`${this.name}[index]`, "", OpType.Regular);
+			return {
+				...context.emit(`${this.name}`, "", OpType.Regular),
+				type: Type.Tensor,
+			};
 		};
 	}
 }
 
 class Kernel {
-	private context: KernelContext;
+	context: KernelContext;
 	private pipeline: GPUComputePipeline;
 	private bindGroup: GPUBindGroup;
+	private inputBuffers: Map<string, GPUBuffer>;
 	private outputBuffers: Map<string, GPUBuffer> = new Map();
 
 	constructor(
-		device: GPUDevice,
+		private device: GPUDevice,
 		context: KernelContext,
 		inputBuffers: Map<string, GPUBuffer>,
 	) {
 		this.context = context;
+		this.inputBuffers = new Map(inputBuffers);
 
 		const code = context.getShaderCode();
 		console.log("KERNEL_BEGIN:");
@@ -228,13 +264,13 @@ class Kernel {
 		context.getInputs().forEach((name, index) => {
 			entries.push({
 				binding: index,
-				resource: { buffer: inputBuffers.get(name)! },
+				resource: { buffer: this.inputBuffers.get(name)! },
 			});
 		});
 
 		// Create output buffers and add bindings
 		const outputs = context.getOutputs();
-		console.log("kerenl constructor outputs=", this, outputs);
+		console.log("kernel constructor outputs=", this, outputs);
 		outputs.forEach((name, index) => {
 			const buffer = device.createBuffer({
 				size: 1024 * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
@@ -254,6 +290,10 @@ class Kernel {
 			entries,
 		});
 		console.log("finished bind");
+	}
+
+	getInputBuffer(name: string): GPUBuffer | undefined {
+		return this.inputBuffers.get(name);
 	}
 
 	run(commandEncoder: GPUCommandEncoder, size: number) {
@@ -277,6 +317,28 @@ class Kernel {
 	getOutputBuffers(): Map<string, GPUBuffer> {
 		return this.outputBuffers;
 	}
+
+	updateInputBuffer(name: string, buffer: GPUBuffer) {
+		this.inputBuffers.set(name, buffer);
+		// Recreate bind group with updated input buffer
+		const entries: GPUBindGroupEntry[] = [];
+		this.context.getInputs().forEach((inputName, index) => {
+			entries.push({
+				binding: index,
+				resource: { buffer: this.inputBuffers.get(inputName)! },
+			});
+		});
+		this.context.getOutputs().forEach((outputName, index) => {
+			entries.push({
+				binding: this.context.getInputs().length + index,
+				resource: { buffer: this.outputBuffers.get(outputName)! },
+			});
+		});
+		this.bindGroup = this.device.createBindGroup({
+			layout: this.pipeline.getBindGroupLayout(0),
+			entries,
+		});
+	}
 }
 
 export class TensorGraph {
@@ -286,7 +348,7 @@ export class TensorGraph {
 	private inputData: Map<string, Float32Array> = new Map();
 	private inputBuffers: Map<string, GPUBuffer> = new Map();
 	private inputCounter: number = 0;
-	private outputSize: number = 0;
+	outputSize: number = 0;
 
 	constructor(device: GPUDevice) {
 		this.device = device;
@@ -310,18 +372,13 @@ export class TensorGraph {
 		}
 	}
 
-	output(x: Gen): Gen {
+	output(x: Arg): Gen {
 		return (context: Context) => {
 			const result = context.gen(x);
 			const [v] = context.useVariables("output");
 			context.addOutput(v);
-      if (result.variable.includes("cross_context")) {
-			  const code = `${v}[index] = ${result.variable}[index];`;
-			  return context.emit(v, code, OpType.Regular, result);
-      } else {
-			  const code = `${v}[index] = ${result.variable};`;
-			  return context.emit(v, code, OpType.Regular, result);
-      }
+			const code = `${v}[index] = ${variable(result, Type.Scalar)};`;
+			return context.emit(v, code, OpType.Regular, result);
 		};
 	}
 
@@ -370,36 +427,78 @@ export class TensorGraph {
 		console.log("this contexts=", this.contexts, this.kernels);
 	}
 
+	private async readBuffer(
+		buffer: GPUBuffer,
+		size: number,
+	): Promise<Float32Array> {
+		const readBuffer = this.device.createBuffer({
+			size: size * Float32Array.BYTES_PER_ELEMENT,
+			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+		});
+
+		const commandEncoder = this.device.createCommandEncoder();
+		commandEncoder.copyBufferToBuffer(
+			buffer,
+			0,
+			readBuffer,
+			0,
+			size * Float32Array.BYTES_PER_ELEMENT,
+		);
+
+		this.device.queue.submit([commandEncoder.finish()]);
+
+		await readBuffer.mapAsync(GPUMapMode.READ);
+		const arrayBuffer = readBuffer.getMappedRange();
+		const resultArray = new Float32Array(arrayBuffer.slice(0));
+		readBuffer.unmap();
+		readBuffer.destroy();
+
+		return resultArray;
+	}
+
 	async run(): Promise<Float32Array> {
 		const commandEncoder = this.device.createCommandEncoder();
 
-		let previousOutputBuffers = this.inputBuffers;
-
-		console.log("Kernels=", this.kernels);
 		for (let i = 0; i < this.kernels.length; i++) {
 			const kernel = this.kernels[i];
 
-			// Update input buffers for the current kernel
+			// If this is not the first kernel, we need to copy data from the previous kernel
 			if (i > 0) {
 				const prevKernel = this.kernels[i - 1];
-				console.log("prev kernel=", prevKernel);
-				prevKernel.getOutputBuffers().forEach((buffer, name) => {
-					console.log("buffer=", buffer, name, previousOutputBuffers);
-					previousOutputBuffers.set(name, buffer);
-				});
+				const prevOutputs = prevKernel.getOutputBuffers();
+				const currentInputs = kernel.context.getInputs();
+
+				for (const inputName of currentInputs) {
+					if (prevOutputs.has(inputName)) {
+						const sourceBuffer = prevOutputs.get(inputName)!;
+						const destBuffer = kernel.getInputBuffer(inputName)!;
+
+						commandEncoder.copyBufferToBuffer(
+							sourceBuffer,
+							0,
+							destBuffer,
+							0,
+							this.outputSize * Float32Array.BYTES_PER_ELEMENT,
+						);
+					}
+				}
 			}
 
+			console.log(`Kernel ${i} inputs:`, kernel.context.getInputs());
+			console.log(`Kernel ${i} outputs:`, kernel.getOutputBuffers().keys());
+			// Run the current kernel
 			kernel.run(commandEncoder, this.outputSize);
 		}
 
+		// Get the final output
 		const finalKernel = this.kernels[this.kernels.length - 1];
-		console.log("final kernel=", finalKernel);
 		const finalOutputBuffer = finalKernel.getOutputBuffer();
 
 		if (!finalOutputBuffer) {
 			throw new Error("Final output buffer not found");
 		}
 
+		// Copy final output to a readable buffer
 		const resultBuffer = this.device.createBuffer({
 			size: this.outputSize * Float32Array.BYTES_PER_ELEMENT,
 			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -413,8 +512,10 @@ export class TensorGraph {
 			this.outputSize * Float32Array.BYTES_PER_ELEMENT,
 		);
 
+		// Submit all command encoder operations
 		this.device.queue.submit([commandEncoder.finish()]);
 
+		// Read the result
 		await resultBuffer.mapAsync(GPUMapMode.READ);
 		const arrayBuffer = resultBuffer.getMappedRange();
 		const resultArray = new Float32Array(arrayBuffer.slice(0));
@@ -436,14 +537,14 @@ export class TensorGraph {
 // Operations remain the same as in your original code
 const binaryOp =
 	(name: string, op: string) =>
-	(x: Gen, y: Gen) =>
+	(x: Arg, y: Arg) =>
 	(context: Context): GenResult => {
 		const parent = context;
 		context = context.useContext(OpType.Regular);
 		const _x = context.gen(x);
 		const _y = context.gen(y);
 		const [variableName] = context.useVariables(`${name}_result`);
-		const code = `let ${variableName} = ${_x.variable} ${op} ${_y.variable};`;
+		const code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)};`;
 		console.log("binarry op called parent=", parent);
 		console.log("binarry op called context=", context);
 		console.log(code);
@@ -459,7 +560,7 @@ export const div = binaryOp("div", "/");
 
 export const reduce =
 	(op: string) =>
-	(x: Gen) =>
+	(x: Arg) =>
 	(context: Context): GenResult => {
 		console.log("reduce called");
 		const reductionContext = context.useContext(OpType.Reduction);
@@ -468,16 +569,41 @@ export const reduce =
 		const code = `
     var ${variableName} = ${_x.variable}[0];
     for (var i = 1u; i < arrayLength(&${_x.variable}); i = i + 1u) {
-      ${variableName} = ${variableName} ${op} ${_x.variable}[i];
+      ${variableName} = ${variableName} ${op} ${variable(_x, Type.Scalar, "i")};
     }
   `;
 		console.log("reduce called with reductionContext", reductionContext);
 		return reductionContext.emit(variableName, code, OpType.Reduction, _x);
 	};
 
-export const sine =
-	(freq: Gen) =>
+export const sum = reduce("+");
+
+export const mean =
+	(x: Arg) =>
 	(context: Context): GenResult => {
+		const reductionContext = context.useContext(OpType.Reduction);
+		const _x = reductionContext.gen(x);
+		const [sumVariable] = reductionContext.useVariables(`mean_sum`);
+		const [countVariable] = reductionContext.useVariables(`mean_count`);
+		const [resultVariable] = reductionContext.useVariables(`mean_result`);
+
+		const code = `
+    var ${sumVariable} = 0.0;
+    var ${countVariable} = 0u;
+    for (var i = 0u; i < arrayLength(&${_x.variable}); i = i + 1u) {
+      ${sumVariable} = ${sumVariable} + ${_x.variable}[i];
+      ${countVariable} = ${countVariable} + 1u;
+    }
+    let ${resultVariable} = ${sumVariable} / f32(${countVariable});
+  `;
+
+		return reductionContext.emit(resultVariable, code, OpType.Reduction, _x); // Mean always outputs a single value
+	};
+
+export const sine =
+	(freq: Arg) =>
+	(context: Context): GenResult => {
+		context = context.useContext(OpType.Regular);
 		const [variableName] = context.useVariables("sine_wave");
 		const _freq = context.gen(freq);
 		const code = `
