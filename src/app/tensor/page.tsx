@@ -25,25 +25,22 @@ const TensorPage: React.FC = () => {
 
 				const graph = new TensorGraph(device);
 
-				const a = graph.input("a");
-				const b = graph.input("b");
-				const c = graph.input("c");
+				let _a = new Float32Array([20, 40, 60, 70, 80, 90]);
+				for (let i = 0; i < 1; i++) {
+					const a = graph.input(_a);
+					const b = graph.input([1, 2, 3, 4, 5, 6]);
+					const c = graph.input([300]);
 
-				// Define matrix multiplication operation
-				const result = graph.output(add(sine(sub(mult(a, b), c)), c));
+					// Define matrix multiplication operation
+					const result = graph.output(add(sine(sub(mult(a, b), c)), c));
 
-				// Compile the graph
-				graph.compile(result);
+					// Compile the graph
+					graph.compile(result);
 
-				// Prepare input data
-				const inputA = new Float32Array([2, 2, 3, 4, 5, 6]);
-				const inputB = new Float32Array([1, 2, 3, 4, 5, 6]);
-				const inputC = new Float32Array([777]);
-
-				// Run the computation
-				const output = await graph.run({ a: inputA, b: inputB, c: inputC }, 6);
-
-				setResult(Array.from(output));
+					// Prepare input data
+					_a = await graph.run(6);
+					setResult(Array.from(_a));
+				}
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "An unknown error occurred",

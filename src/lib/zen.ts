@@ -26,12 +26,11 @@ interface Context {
 }
 
 class ShaderBuilder implements Context {
-	private variables: Set<string> = new Set();
 	private code: string[] = [];
-	private inputs: Set<string> = new Set();
-	private outputs: Set<string> = new Set();
+	private inputs: Map<string, number> = new Map();
+	private output: string | null = null;
+
 	private currentOpType: OpType = OpType.Regular;
-	private bindingIndices: Map<string, number> = new Map();
 	private idx = 0;
 
 	gen(x: Gen): GenResult {
@@ -62,52 +61,40 @@ class ShaderBuilder implements Context {
 	}
 
 	addInput(name: string) {
-		this.inputs.add(name);
-		this.bindingIndices.set(name, this.bindingIndices.size);
+		if (!this.inputs.has(name)) {
+			this.inputs.set(name, this.inputs.size);
+		}
 	}
 
 	setOutput(name: string) {
-		this.outputs.add(name);
-		this.bindingIndices.set(name, this.bindingIndices.size);
+		this.output = name;
 	}
 
 	getBindingIndex(name: string): number {
-		const index = this.bindingIndices.get(name);
-		if (index === undefined) {
-			throw new Error(`Binding index not found for ${name}`);
+		if (this.inputs.has(name)) {
+			return this.inputs.get(name)!;
 		}
-		return index;
+		if (name === this.output) {
+			return this.inputs.size;
+		}
+		throw new Error(`Binding index not found for ${name}`);
 	}
 
 	getShaderCode(): string {
-		const inputBindings = Array.from(this.inputs)
+		const inputBindings = Array.from(this.inputs.entries())
 			.map(
-				(name, index) =>
+				([name, index]) =>
 					`@group(0) @binding(${index}) var<storage, read> ${name}: array<f32>;`,
 			)
 			.join("\n");
 
-		const outputBindings = Array.from(this.outputs)
-			.map(
-				(name, index) =>
-					`@group(0) @binding(${this.inputs.size + index}) var<storage, read_write> ${name}: array<f32>;`,
-			)
-			.join("\n");
+		const outputBinding = this.output
+			? `@group(0) @binding(${this.inputs.size}) var<storage, read_write> ${this.output}: array<f32>;`
+			: "";
 
-		const stateBinding = `@group(0) @binding(${this.inputs.size + this.outputs.size}) var<storage, read_write> filterState: array<f32>;`;
-
-		console.log("input bindings");
-		console.log(inputBindings);
-
-		console.log("output bindings");
-		console.log(outputBindings, this.outputs);
-
-		console.log("state bindings");
-		console.log(stateBinding);
 		return `
       ${inputBindings}
-      ${outputBindings}
-      ${stateBinding}
+      ${outputBinding}
 
       @compute @workgroup_size(64)
       fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -170,19 +157,23 @@ export class TensorGraph {
 	protected device: GPUDevice;
 	protected pipeline: GPUComputePipeline | null = null;
 	protected bindGroup: GPUBindGroup | null = null;
+	private inputData: Map<string, Float32Array> = new Map();
+
+	private inputCounter: number = 0;
 
 	constructor(device: GPUDevice) {
 		this.device = device;
 	}
 
-	input(name: string): Gen {
+	input(data: Float32Array | number[]): Gen {
+		const inputName = `input_${this.inputCounter++}`;
+		this.inputData.set(
+			inputName,
+			Array.isArray(data) ? new Float32Array(data) : data,
+		);
 		return (context: Context) => {
-			(context as ShaderBuilder).addInput(name);
-			return context.emit(
-				`${name}[index]`,
-				"",
-				OpType.Regular /* no dependencies */,
-			);
+			(context as ShaderBuilder).addInput(inputName);
+			return context.emit(`${inputName}[index]`, "", OpType.Regular);
 		};
 	}
 
@@ -199,8 +190,8 @@ export class TensorGraph {
 
 	compile(graph: Gen) {
 		const result = this.shaderBuilder.gen(graph);
+    console.log('compile result=', result);
 		const shaderCode = this.shaderBuilder.getShaderCode();
-		console.log("Generated Shader Code:", shaderCode);
 
 		const shaderModule = this.device.createShaderModule({
 			code: shaderCode,
@@ -215,10 +206,7 @@ export class TensorGraph {
 		});
 	}
 
-	async run(
-		inputs: Record<string, Float32Array>,
-		outputSize: number,
-	): Promise<Float32Array> {
+	async run(outputSize: number): Promise<Float32Array> {
 		if (!this.pipeline) {
 			throw new Error("Graph not compiled. Call compile() first.");
 		}
@@ -227,7 +215,7 @@ export class TensorGraph {
 		const entries: GPUBindGroupEntry[] = [];
 
 		// Create input buffers
-		Object.entries(inputs).forEach(([name, data], index) => {
+		this.inputData.forEach((data, name) => {
 			const buffer = this.device.createBuffer({
 				size: data.byteLength,
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -235,7 +223,7 @@ export class TensorGraph {
 			this.device.queue.writeBuffer(buffer, 0, data);
 			buffers.push(buffer);
 			entries.push({
-				binding: index,
+				binding: this.shaderBuilder.getBindingIndex(name),
 				resource: { buffer },
 			});
 		});
@@ -247,7 +235,7 @@ export class TensorGraph {
 		});
 		buffers.push(outputBuffer);
 		entries.push({
-			binding: Object.keys(inputs).length,
+			binding: this.inputData.size,
 			resource: { buffer: outputBuffer },
 		});
 
