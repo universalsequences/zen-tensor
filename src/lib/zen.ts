@@ -152,29 +152,65 @@ export const sine =
 		return context.emit(variableName, code, OpType.Regular, _freq);
 	};
 
+class InputPlaceholder {
+	private name: string;
+	private graph: TensorGraph;
+	private size: number;
+
+	constructor(name: string, graph: TensorGraph, size: number) {
+		this.name = name;
+		this.graph = graph;
+		this.size = size;
+	}
+
+	set(data: number[] | Float32Array) {
+		if (data.length !== this.size) {
+			throw new Error(
+				`Input size mismatch. Expected ${this.size}, got ${data.length}`,
+			);
+		}
+		this.graph.updateInput(this.name, data);
+	}
+
+	getGen(): Gen {
+		return (context: Context) => {
+			(context as ShaderBuilder).addInput(this.name);
+			return context.emit(`${this.name}[index]`, "", OpType.Regular);
+		};
+	}
+}
+
 export class TensorGraph {
-	protected shaderBuilder: ShaderBuilder = new ShaderBuilder();
+  protected shaderBuilder: ShaderBuilder = new ShaderBuilder();
 	protected device: GPUDevice;
 	protected pipeline: GPUComputePipeline | null = null;
 	protected bindGroup: GPUBindGroup | null = null;
 	private inputData: Map<string, Float32Array> = new Map();
-
+	private inputBuffers: Map<string, GPUBuffer> = new Map();
 	private inputCounter: number = 0;
+	private outputSize: number = 0;
+	private outputBuffer: GPUBuffer | null = null;
 
 	constructor(device: GPUDevice) {
 		this.device = device;
 	}
 
-	input(data: Float32Array | number[]): Gen {
+	input(size: number): InputPlaceholder {
 		const inputName = `input_${this.inputCounter++}`;
-		this.inputData.set(
-			inputName,
-			Array.isArray(data) ? new Float32Array(data) : data,
-		);
-		return (context: Context) => {
-			(context as ShaderBuilder).addInput(inputName);
-			return context.emit(`${inputName}[index]`, "", OpType.Regular);
-		};
+		const placeholder = new InputPlaceholder(inputName, this, size);
+		this.inputData.set(inputName, new Float32Array(size));
+		return placeholder;
+	}
+
+	updateInput(name: string, data: number[] | Float32Array) {
+		const inputArray =
+			data instanceof Float32Array ? data : new Float32Array(data);
+		this.inputData.set(name, inputArray);
+
+		if (this.inputBuffers.has(name)) {
+			const buffer = this.inputBuffers.get(name)!;
+			this.device.queue.writeBuffer(buffer, 0, inputArray);
+		}
 	}
 
 	output(x: Gen): Gen {
@@ -182,16 +218,16 @@ export class TensorGraph {
 			const result = context.gen(x);
 			const [v] = context.useVariables("output");
 			(context as ShaderBuilder).setOutput(v);
-			console.log("result output=", result);
 			const code = `${v}[index] = ${result.variable};`;
 			return context.emit(v, code, OpType.Regular, result);
 		};
 	}
 
-	compile(graph: Gen) {
+	compile(graph: Gen, outputSize: number) {
+		this.outputSize = outputSize;
 		const result = this.shaderBuilder.gen(graph);
-    console.log('compile result=', result);
 		const shaderCode = this.shaderBuilder.getShaderCode();
+		console.log("Generated Shader Code:", shaderCode);
 
 		const shaderModule = this.device.createShaderModule({
 			code: shaderCode,
@@ -204,14 +240,11 @@ export class TensorGraph {
 				entryPoint: "main",
 			},
 		});
+
+		this.setupBuffers();
 	}
 
-	async run(outputSize: number): Promise<Float32Array> {
-		if (!this.pipeline) {
-			throw new Error("Graph not compiled. Call compile() first.");
-		}
-
-		const buffers: GPUBuffer[] = [];
+	private setupBuffers() {
 		const entries: GPUBindGroupEntry[] = [];
 
 		// Create input buffers
@@ -221,7 +254,7 @@ export class TensorGraph {
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 			});
 			this.device.queue.writeBuffer(buffer, 0, data);
-			buffers.push(buffer);
+			this.inputBuffers.set(name, buffer);
 			entries.push({
 				binding: this.shaderBuilder.getBindingIndex(name),
 				resource: { buffer },
@@ -229,59 +262,60 @@ export class TensorGraph {
 		});
 
 		// Create output buffer
-		const outputBuffer = this.device.createBuffer({
-			size: outputSize * Float32Array.BYTES_PER_ELEMENT,
+		this.outputBuffer = this.device.createBuffer({
+			size: this.outputSize * Float32Array.BYTES_PER_ELEMENT,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
 		});
-		buffers.push(outputBuffer);
 		entries.push({
 			binding: this.inputData.size,
-			resource: { buffer: outputBuffer },
+			resource: { buffer: this.outputBuffer },
 		});
 
 		this.bindGroup = this.device.createBindGroup({
-			layout: this.pipeline.getBindGroupLayout(0),
+			layout: this.pipeline!.getBindGroupLayout(0),
 			entries,
 		});
+	}
 
-		// Create a single command encoder for all operations
+	async run(): Promise<Float32Array> {
+		if (!this.pipeline || !this.bindGroup || !this.outputBuffer) {
+			throw new Error("Graph not compiled. Call compile() first.");
+		}
+
 		const commandEncoder = this.device.createCommandEncoder();
-
-		// Dispatch compute pass
 		const passEncoder = commandEncoder.beginComputePass();
 		passEncoder.setPipeline(this.pipeline);
 		passEncoder.setBindGroup(0, this.bindGroup);
-		passEncoder.dispatchWorkgroups(Math.ceil(outputSize / 64));
+		passEncoder.dispatchWorkgroups(Math.ceil(this.outputSize / 64));
 		passEncoder.end();
 
-		// Create result buffer
 		const resultBuffer = this.device.createBuffer({
-			size: outputSize * Float32Array.BYTES_PER_ELEMENT,
+			size: this.outputSize * Float32Array.BYTES_PER_ELEMENT,
 			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
 		});
 
-		// Copy output to result buffer
 		commandEncoder.copyBufferToBuffer(
-			outputBuffer,
+			this.outputBuffer,
 			0,
 			resultBuffer,
 			0,
-			outputSize * Float32Array.BYTES_PER_ELEMENT,
+			this.outputSize * Float32Array.BYTES_PER_ELEMENT,
 		);
 
-		// Submit all commands at once
 		this.device.queue.submit([commandEncoder.finish()]);
 
-		// Read the result
 		await resultBuffer.mapAsync(GPUMapMode.READ);
 		const arrayBuffer = resultBuffer.getMappedRange();
 		const resultArray = new Float32Array(arrayBuffer.slice(0));
 		resultBuffer.unmap();
 
-		// Clean up
-		buffers.forEach((buffer) => buffer.destroy());
 		resultBuffer.destroy();
 
 		return resultArray;
+	}
+
+	destroy() {
+		this.inputBuffers.forEach((buffer) => buffer.destroy());
+		if (this.outputBuffer) this.outputBuffer.destroy();
 	}
 }
