@@ -52,6 +52,71 @@ const binaryOp =
 		);
 	};
 
+const binaryOpF =
+	(name: string, op: string) =>
+	(x: Arg, y: Arg) =>
+	(context: Context): GenResult => {
+		const parent = context;
+		context = context.useContext(OpType.Regular);
+		const _x = context.gen(x);
+		const _y = context.gen(y);
+
+		// Get shapes
+		const shapeX = _x.shape;
+		const shapeY = _y.shape;
+
+		// Determine output shape
+		let outputShape: number[];
+		if (arraysEqual(shapeX, shapeY)) {
+			outputShape = shapeX;
+		} else if (isScalar(shapeX) || isScalar(shapeY)) {
+			outputShape = isScalar(shapeX) ? shapeY : shapeX;
+		} else {
+			throw new Error(
+				`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`,
+			);
+		}
+
+		const [variableName] = context.useVariables(`${name}_result`);
+
+		// Generate code with broadcasting if necessary
+		let code: string;
+		const totalSize = outputShape.reduce((a, b) => a * b, 1);
+
+		if (arraysEqual(shapeX, shapeY)) {
+			code = `
+      for (var index = global_id.x; index < ${totalSize}u; index += workgroup_size.x) {
+        ${variableName}[index] = ${_x.variable}[index] ${op} ${_y.variable}[index];
+      }
+    `;
+		} else if (isScalar(shapeX)) {
+			code = `
+      let x_val = ${_x.variable}[0];
+      for (var index = global_id.x; index < ${totalSize}u; index += workgroup_size.x) {
+        ${variableName}[index] = x_val ${op} ${_y.variable}[index];
+      }
+    `;
+		} else if (isScalar(shapeY)) {
+			code = `
+      let y_val = ${_y.variable}[0];
+      for (var index = global_id.x; index < ${totalSize}u; index += workgroup_size.x) {
+        ${variableName}[index] = ${_x.variable}[index] ${op} y_val;
+      }
+    `;
+		} else {
+			throw new Error("Unexpected shape combination");
+		}
+
+		return context.emit(
+			variableName,
+			code,
+			OpType.Regular,
+			outputShape,
+			_x,
+			_y,
+		);
+	};
+
 // Helper functions
 function arraysEqual(a: number[], b: number[]): boolean {
 	if (a.length !== b.length) return false;

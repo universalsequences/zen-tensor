@@ -43,7 +43,7 @@ const TensorPage: React.FC = () => {
 				const device = await adapter.requestDevice();
 				const g = new TensorGraph(device);
 
-				const si = 32;
+				const si = 20;
 				const a1 = new Float32Array(si * si);
 				const b1 = new Float32Array(si * si);
 				const c1 = new Float32Array(si * si);
@@ -85,7 +85,7 @@ const TensorPage: React.FC = () => {
 						),
 					),
 				);
-				//const result = g.output(add(a, b));
+				const resulty = g.output(add(a, b));
 
 				g.compile(result, [si, si]);
 				setKernels(g.kernels.map((x) => x.context.kernelCode || ""));
@@ -93,9 +93,6 @@ const TensorPage: React.FC = () => {
 				for (let i = 0; i < 10000; i++) {
 					const r = await g.run();
 					a.set(r);
-					if (i % 100 === 0) {
-						console.log("result[%s]", i, Array.from(r));
-					}
 					setResult(Array.from(r));
 					setEpoch(i);
 				}

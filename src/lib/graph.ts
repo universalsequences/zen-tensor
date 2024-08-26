@@ -52,7 +52,10 @@ export class TensorGraph {
 		this.outputSize = outputShape.reduce((a, b) => a * b, 1);
 
 		this.contexts = [];
-		let currentContext = new KernelContext(OpType.Regular, this);
+		let currentContext = new KernelContext(
+			OpType.Regular,
+			this,
+		);
 		this.contexts.push(currentContext);
 
 		const traverse = (node: GenResult) => {
@@ -79,7 +82,8 @@ export class TensorGraph {
 
 		// Create kernels
 		this.kernels = this.contexts.map(
-			(context) => new Kernel(this.device, context, this.inputBuffers),
+			(context) => new Kernel(this.device, context, this.inputBuffers, this.outputSize),
+
 		);
 	}
 
@@ -112,7 +116,7 @@ export class TensorGraph {
 		return resultArray;
 	}
 
-	async run(): Promise<Float32Array> {
+	async run2(): Promise<Float32Array> {
 		const commandEncoder = this.device.createCommandEncoder();
 
 		for (let i = 0; i < this.kernels.length; i++) {
@@ -181,6 +185,79 @@ export class TensorGraph {
 		resultBuffer.destroy();
 
 		return resultArray;
+	}
+
+	async run(): Promise<Float32Array> {
+		const commandEncoder = this.device.createCommandEncoder();
+		const WORKGROUP_SIZE = 64; // This should match your shader's workgroup size
+
+		for (let i = 0; i < this.kernels.length; i++) {
+			const kernel = this.kernels[i];
+			// If this is not the first kernel, we need to copy data from the previous kernel
+			if (i > 0) {
+				for (let j = 0; j < i; j++) {
+					const prevOutputs = this.kernels[j].getOutputBuffers();
+					const currentInputs = kernel.context.getInputs();
+					for (const inputName of currentInputs) {
+						if (prevOutputs.has(inputName + "_out")) {
+							const sourceBuffer = prevOutputs.get(inputName + "_out")!;
+							const destBuffer = kernel.getInputBuffer(inputName)!;
+							commandEncoder.copyBufferToBuffer(
+								sourceBuffer,
+								0,
+								destBuffer,
+								0,
+								this.outputSize * Float32Array.BYTES_PER_ELEMENT,
+							);
+						}
+					}
+				}
+			}
+
+			// Calculate the number of workgroups needed
+			const numWorkgroups = Math.ceil(this.outputSize / WORKGROUP_SIZE);
+
+			// Run the current kernel with the calculated number of workgroups
+			kernel.run(commandEncoder, numWorkgroups);
+		}
+
+		// Get the final output
+		const finalKernel = this.kernels[this.kernels.length - 1];
+		const finalOutputBuffer = finalKernel.getOutputBuffer();
+		if (!finalOutputBuffer) {
+			throw new Error("Final output buffer not found");
+		}
+
+		// Copy final output to a readable buffer
+		const resultBuffer = this.device.createBuffer({
+			size: finalOutputBuffer.size,
+			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+		});
+		commandEncoder.copyBufferToBuffer(
+			finalOutputBuffer,
+			0,
+			resultBuffer,
+			0,
+			finalOutputBuffer.size,
+		);
+
+		// Submit all command encoder operations
+		this.device.queue.submit([commandEncoder.finish()]);
+
+		// Read the result
+		await resultBuffer.mapAsync(GPUMapMode.READ);
+		const arrayBuffer = resultBuffer.getMappedRange();
+		const resultArray = new Float32Array(arrayBuffer.slice(0));
+		resultBuffer.unmap();
+		resultBuffer.destroy();
+
+		return resultArray;
+	}
+
+	// Helper method to determine the expected result length
+	private getExpectedResultLength(): number {
+		const finalKernel = this.kernels[this.kernels.length - 1];
+		return this.outputSize;
 	}
 
 	destroy() {

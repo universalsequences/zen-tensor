@@ -11,6 +11,7 @@ export class Kernel {
 		private device: GPUDevice,
 		context: KernelContext,
 		inputBuffers: Map<string, GPUBuffer>,
+    size: number
 	) {
 		this.context = context;
 		this.inputBuffers = new Map(inputBuffers);
@@ -44,7 +45,7 @@ export class Kernel {
 		const outputs = context.getOutputs();
 		outputs.forEach((name, index) => {
 			const buffer = device.createBuffer({
-				size: 1024 * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
+				size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
 			});
 			this.outputBuffers.set(name, buffer);
@@ -64,11 +65,21 @@ export class Kernel {
 		return this.inputBuffers.get(name);
 	}
 
+	/*
 	run(commandEncoder: GPUCommandEncoder, size: number) {
 		const passEncoder = commandEncoder.beginComputePass();
 		passEncoder.setPipeline(this.pipeline);
 		passEncoder.setBindGroup(0, this.bindGroup);
 		passEncoder.dispatchWorkgroups(Math.ceil(size / 64));
+		passEncoder.end();
+	}
+  */
+
+	run(commandEncoder: GPUCommandEncoder, numWorkgroups: number) {
+		const passEncoder = commandEncoder.beginComputePass();
+		passEncoder.setPipeline(this.pipeline);
+		passEncoder.setBindGroup(0, this.bindGroup);
+		passEncoder.dispatchWorkgroups(numWorkgroups);
 		passEncoder.end();
 	}
 
