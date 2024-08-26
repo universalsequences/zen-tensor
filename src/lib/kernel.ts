@@ -16,13 +16,10 @@ export class Kernel {
 		this.inputBuffers = new Map(inputBuffers);
 
 		const code = context.getShaderCode();
-		console.log("KERNEL_BEGIN:");
 		console.log(code);
-		console.log("KERNEL_END");
 		const shaderModule = device.createShaderModule({
 			code,
 		});
-		console.log("SUCCESS");
 
 		this.pipeline = device.createComputePipeline({
 			layout: "auto",
@@ -44,26 +41,22 @@ export class Kernel {
 
 		// Create output buffers and add bindings
 		const outputs = context.getOutputs();
-		console.log("kernel constructor outputs=", this, outputs);
 		outputs.forEach((name, index) => {
 			const buffer = device.createBuffer({
 				size: 1024 * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
 			});
 			this.outputBuffers.set(name, buffer);
-			console.log("create buffer = ", buffer);
 			entries.push({
 				binding: context.getInputs().length + index,
 				resource: { buffer },
 			});
 		});
-		console.log("entries=", entries);
 
 		this.bindGroup = device.createBindGroup({
 			layout: this.pipeline.getBindGroupLayout(0),
 			entries,
 		});
-		console.log("finished bind");
 	}
 
 	getInputBuffer(name: string): GPUBuffer | undefined {
@@ -80,7 +73,6 @@ export class Kernel {
 
 	getOutputBuffer(name?: string): GPUBuffer | undefined {
 		if (!name) {
-			console.log("getting final buffer", name, this.outputBuffers.keys());
 			for (const key of this.outputBuffers.keys()) {
 				return this.outputBuffers.get(key);
 			}

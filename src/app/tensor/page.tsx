@@ -41,16 +41,53 @@ const TensorPage: React.FC = () => {
 				const device = await adapter.requestDevice();
 				const g = new TensorGraph(device);
 
-				const a = g.input([2, 2]).set([3, 2, 8, 7]);
-				const b = g.input([2, 2]).set([9, 7, 2, 4]);
-				const c = g.input([2, 2]).set([0, 0, 0, 10]);
-				const d = g.input([4]).set([0, 4, 4, 4]);
-				const result = g.output(dot(reshape(matmul(a, b), [4]), d));
+				const a = g.input([2, 2]).set([1, 4, 1, 1]);
+				const b = g.input([2, 2]).set([0.009, 7, 2, 0.4]);
+				const c = g.input([2, 2]).set([1, 1, 1, 0.001]);
+				const e = g.input([2, 2]).set([1, 1, 1, 1]);
+				const result2 = g.output(
+					dot(reshape(matmul(a, b), [4]), reshape(matmul(e, b), [4])),
+				);
+				//const result2 = g.output(mult(matmul(a, b), matmul(e, b)));
+				const result6 = g.output(matmul(c, e));
+				const result5 = g.output(matmul(a, b));
+				//const result = g.output(matmul(a, b));
+				//const d = g.input([4]).set([0, 4, 4, 4]);
+
+				// this is complicated because
+				const result = g.output(
+					sine(
+						matmul(
+							a,
+							mult(
+								g.input([2, 2]).set([0.01, -0.1, 0.7, 4.001]),
+								add(
+									matmul(c, e),
+									matmul(
+										reshape(matmul(a, b), [2, 2]),
+										sum(
+											add(
+												reshape(add(b, c), [2, 2]),
+												reshape(add(e, c), [2, 2]),
+											),
+										),
+									),
+								),
+							),
+						),
+					),
+				);
+
 				g.compile(result, [2, 2]);
 
-				const r = await g.run();
-				console.log("result = ", Array.from(r), r);
-				setResult(Array.from(r));
+				for (let i = 0; i < 1000; i++) {
+					const r = await g.run();
+					a.set(r);
+					if (i % 100 === 0) {
+						console.log("result[%s]", i, Array.from(r));
+						setResult(Array.from(r));
+					}
+				}
 			} catch (err) {
 				console.log(err);
 				setError(

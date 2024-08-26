@@ -6,8 +6,10 @@ let counter = 1;
 
 export interface Context {
 	id: number;
+	children: Context[];
 	parentContext: Context | undefined;
-	gen: (x: Arg) => GenResult;
+	opType: OpType;
+	gen: (x: Arg, force?: boolean) => GenResult;
 	useVariables: (...names: string[]) => string[];
 	emit: (
 		variable: string,
@@ -30,11 +32,12 @@ export class KernelContext implements Context {
 	private outputs: Map<string, number> = new Map();
 	private idx = 0;
 
-	readonly opType: OpType;
+	opType: OpType;
 	parentContext: Context | undefined;
 	id: number;
 	tensorGraph: TensorGraph;
 	private shapes: Map<string, number[]> = new Map();
+	children: Context[] = [];
 
 	constructor(
 		opType: OpType,
@@ -45,6 +48,9 @@ export class KernelContext implements Context {
 		this.tensorGraph = tensorGraph;
 		this.parentContext = parentContext;
 		this.id = counter++;
+		if (parentContext) {
+			parentContext.children.push(this);
+		}
 	}
 
 	getShape(variable: string): number[] {
@@ -55,21 +61,22 @@ export class KernelContext implements Context {
 		this.shapes.set(variable, shape);
 	}
 
-	gen(x: Arg): GenResult {
+	gen(x: Arg, force?: boolean): GenResult {
 		if (x instanceof InputPlaceholder) {
 			const rs = (x as InputPlaceholder).getGen()(this);
 			return rs;
 		}
+
+		if (force) {
+			return x(this);
+		}
 		const result = (x as Gen)(this);
+		if (result.type === Type.Tensor) {
+			// return result;
+		}
 		if (result.opType !== this.opType || result.opType === OpType.Reduction) {
 			// We're crossing context boundaries
 			const outputName = `cross_context_output_${this.id}_${this.idx++}`;
-			console.log(
-				"adding output in gen: outputName: ",
-				outputName,
-				result,
-				this,
-			);
 			this.addInput(outputName);
 			const buffer = this.tensorGraph.device.createBuffer({
 				size: this.tensorGraph.outputSize * 4,
@@ -118,6 +125,14 @@ export class KernelContext implements Context {
 
 	useContext(opType: OpType): Context {
 		if (this.opType !== opType || opType === OpType.Reduction) {
+			const childrenOfParentWithType =
+				this.parentContext?.children.filter((x) => x.opType === opType) || [];
+			if (this.opType === opType) {
+				childrenOfParentWithType.length = 0;
+			}
+			if (childrenOfParentWithType.length > 0) {
+				return childrenOfParentWithType[0];
+			}
 			return new KernelContext(opType, this.tensorGraph, this);
 		}
 		return this;
@@ -146,7 +161,6 @@ export class KernelContext implements Context {
 	}
 
 	getShaderCode(): string {
-		console.log("get shader code called with codes", this.code, this);
 		const inputBindings = Array.from(this.inputs.entries())
 			.map(
 				([name, index]) =>

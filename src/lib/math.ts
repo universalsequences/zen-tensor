@@ -1,12 +1,11 @@
 import { Context } from "./context";
-import { OpType, variable, Gen, GenResult, Arg } from "./zen";
+import { OpType, variable, Gen, GenResult, Arg, Type } from "./zen";
 
 const binaryOp =
 	(name: string, op: string) =>
 	(x: Arg, y: Arg) =>
 	(context: Context): GenResult => {
 		const parent = context;
-		console.log("binary op called name=", op);
 		context = context.useContext(OpType.Regular);
 		const _x = context.gen(x);
 		const _y = context.gen(y);
@@ -22,7 +21,6 @@ const binaryOp =
 		} else if (isScalar(shapeX) || isScalar(shapeY)) {
 			outputShape = isScalar(shapeX) ? shapeY : shapeX;
 		} else {
-			console.log("incompatible");
 			throw new Error(
 				`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`,
 			);
@@ -33,7 +31,6 @@ const binaryOp =
 		// Generate code with broadcasting if necessary
 		let code: string | undefined = undefined;
 		if (arraysEqual(shapeX, shapeY)) {
-			console.log("equal...", _x, _y);
 			code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)};`;
 		} else if (isScalar(shapeX)) {
 			code = `let ${variableName} = ${variable(_x)}[0] ${op} ${variable(_y)};`;
@@ -41,16 +38,11 @@ const binaryOp =
 			code = `let ${variableName} = ${variable(_x)} ${op} ${variable(_y)}[0];`;
 		}
 
-		console.log("code=", code);
 		if (!code) {
 			throw new Error("no code");
 		}
 
-		console.log("binary op called parent=", parent);
-		console.log("binary op called context=", context);
-		console.log(code);
-
-		const ret = context.emit(
+		return context.emit(
 			variableName,
 			code,
 			OpType.Regular,
@@ -58,8 +50,6 @@ const binaryOp =
 			_x,
 			_y,
 		);
-		console.log(ret);
-		return ret;
 	};
 
 // Helper functions
@@ -84,7 +74,6 @@ export const reduce =
 	(op: string) =>
 	(x: Arg) =>
 	(context: Context): GenResult => {
-		console.log("reduce called");
 		const reductionContext = context.useContext(OpType.Reduction);
 		const _x = reductionContext.gen(x);
 		const [variableName] = reductionContext.useVariables(`reduce_result`);
@@ -94,7 +83,6 @@ export const reduce =
       ${variableName} = ${variableName} ${op} ${variable(_x, Type.Scalar, "i")};
     }
   `;
-		console.log("reduce called with reductionContext", reductionContext);
 		return reductionContext.emit(
 			variableName,
 			code,
@@ -125,8 +113,6 @@ export const mean =
     let ${resultVariable} = ${sumVariable} / f32(${countVariable});
   `;
 
-		console.log("mean generated=", _x);
-
 		return reductionContext.emit(
 			resultVariable,
 			code,
@@ -143,9 +129,8 @@ export const func = (name: string) => {
 			const [variableName] = context.useVariables(`${name}_result`);
 			const _freq = context.gen(freq);
 			const code = `
-    let ${variableName} = ${name}(${_freq.variable});
+let ${variableName} = ${name}(${variable(_freq)});
   `;
-			console.log("sines dep=", _freq, code);
 			return context.emit(
 				variableName,
 				code,
@@ -200,11 +185,19 @@ var ${sum} = 0.0;
 for (var k = 0u; k < ${K}; k = k + 1u) {
 let a_idx = ${row} * ${K} + k;
 let b_idx = k * ${N} + ${col};
-${sum} = ${sum} + ${_a.variable}[a_idx] * ${_b.variable}[b_idx];
+${sum} = ${sum} + ${variable(_a, Type.Scalar, "a_idx")} * ${variable(_b, Type.Scalar, "b_idx")};
     }
 
 let ${resultVar} = ${sum};
   `;
 
-		return context.emit(resultVar, code, OpType.Reduction, outputShape, _a, _b);
+		let m = context.emit(
+			resultVar,
+			code,
+			OpType.Reduction,
+			outputShape,
+			_a,
+			_b,
+		);
+		return m;
 	};

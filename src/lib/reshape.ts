@@ -4,8 +4,15 @@ import { Context } from "./context";
 export const reshape =
 	(input: Arg, newShape: number[]) =>
 	(context: Context): GenResult => {
-    context = context.useContext(OpType.Regular)
-		const _input = context.gen(input);
+		//context = context.useContext(OpType.Regular);
+		const _input = context.gen(input, true);
+		const ret = {
+			..._input,
+			shape: newShape,
+		};
+    console.log("reshape returned=", ret)
+    return ret;
+		/*
 		const oldShape = _input.shape;
 
 		// Calculate total elements
@@ -26,4 +33,5 @@ export const reshape =
 			...context.emit(_input.variable, code, OpType.Regular, newShape, _input),
 			type: _input.type,
 		};
+    */
 	};

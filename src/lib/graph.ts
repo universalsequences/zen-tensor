@@ -54,15 +54,8 @@ export class TensorGraph {
 		this.contexts = [];
 		let currentContext = new KernelContext(OpType.Regular, this);
 		this.contexts.push(currentContext);
-		console.log("compile called...", this.contexts);
 
 		const traverse = (node: GenResult) => {
-			console.log(
-				"traversing node.code=%s id=%s",
-				node.code,
-				node.context.id,
-				node,
-			);
 			if (node.context !== currentContext) {
 				currentContext = node.context;
 				this.contexts = [currentContext, ...this.contexts];
@@ -72,7 +65,6 @@ export class TensorGraph {
 		};
 
 		const result = graph(currentContext);
-		console.log("result graph=", result);
 		traverse(result);
 
 		// Create input buffers
@@ -85,13 +77,10 @@ export class TensorGraph {
 			this.inputBuffers.set(name, buffer);
 		});
 
-		console.log("traversal=", this.contexts);
 		// Create kernels
-		console.log("input buffers=", this.inputBuffers);
 		this.kernels = this.contexts.map(
 			(context) => new Kernel(this.device, context, this.inputBuffers),
 		);
-		console.log("this contexts=", this.contexts, this.kernels);
 	}
 
 	private async readBuffer(
@@ -132,29 +121,28 @@ export class TensorGraph {
 			// If this is not the first kernel, we need to copy data from the previous kernel
 			if (i > 0) {
 				const prevKernel = this.kernels[i - 1];
-				const prevOutputs = prevKernel.getOutputBuffers();
-				console.log("get output buffers=", prevOutputs);
-				const currentInputs = kernel.context.getInputs();
+				for (let j = 0; j < i; j++) {
+					const prevOutputs = this.kernels[j].getOutputBuffers();
+					//const prevOutputs = prevKernel.getOutputBuffers();
+					const currentInputs = kernel.context.getInputs();
 
-				for (const inputName of currentInputs) {
-					if (prevOutputs.has(inputName + "_out")) {
-						const sourceBuffer = prevOutputs.get(inputName + "_out")!;
-						const destBuffer = kernel.getInputBuffer(inputName)!;
+					for (const inputName of currentInputs) {
+						if (prevOutputs.has(inputName + "_out")) {
+							const sourceBuffer = prevOutputs.get(inputName + "_out")!;
+							const destBuffer = kernel.getInputBuffer(inputName)!;
 
-						console.log("sourcebuffer/destbuffer", sourceBuffer, destBuffer);
-						commandEncoder.copyBufferToBuffer(
-							sourceBuffer,
-							0,
-							destBuffer,
-							0,
-							this.outputSize * Float32Array.BYTES_PER_ELEMENT,
-						);
+							commandEncoder.copyBufferToBuffer(
+								sourceBuffer,
+								0,
+								destBuffer,
+								0,
+								this.outputSize * Float32Array.BYTES_PER_ELEMENT,
+							);
+						}
 					}
 				}
 			}
 
-			console.log(`Kernel ${i} inputs:`, kernel.context.getInputs());
-			console.log(`Kernel ${i} outputs:`, kernel.getOutputBuffers().keys());
 			// Run the current kernel
 			kernel.run(commandEncoder, this.outputSize);
 		}
@@ -163,7 +151,6 @@ export class TensorGraph {
 		const finalKernel = this.kernels[this.kernels.length - 1];
 		const finalOutputBuffer = finalKernel.getOutputBuffer();
 
-		console.log('final output buffer=', finalOutputBuffer)
 
 		if (!finalOutputBuffer) {
 			throw new Error("Final output buffer not found");
