@@ -21,6 +21,8 @@ import {
 const TensorPage: React.FC = () => {
 	const running = useRef(false);
 	const [result, setResult] = useState<number[] | null>([]);
+	const [kernels, setKernels] = useState<string[]>([]);
+	const [epoch, setEpoch] = useState(0);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -41,34 +43,40 @@ const TensorPage: React.FC = () => {
 				const device = await adapter.requestDevice();
 				const g = new TensorGraph(device);
 
-				const a = g.input([2, 2]).set([1, 4, 1, 1]);
-				const b = g.input([2, 2]).set([0.009, 7, 2, 0.4]);
-				const c = g.input([2, 2]).set([1, 1, 1, 0.001]);
-				const e = g.input([2, 2]).set([1, 1, 1, 1]);
-				const result2 = g.output(
-					dot(reshape(matmul(a, b), [4]), reshape(matmul(e, b), [4])),
-				);
-				//const result2 = g.output(mult(matmul(a, b), matmul(e, b)));
-				const result6 = g.output(matmul(c, e));
-				const result5 = g.output(matmul(a, b));
-				//const result = g.output(matmul(a, b));
-				//const d = g.input([4]).set([0, 4, 4, 4]);
+				const si = 32;
+				const a1 = new Float32Array(si * si);
+				const b1 = new Float32Array(si * si);
+				const c1 = new Float32Array(si * si);
+				const e1 = new Float32Array(si * si);
+				for (let i = 0; i < si * si; i++) {
+					a1[i] = Math.random();
+					b1[i] = Math.random();
+					c1[i] = Math.random();
+					e1[i] = Math.random();
+				}
 
-				// this is complicated because
+				const a = g.input([si, si]).set(a1);
+				const b = g.input([si, si]).set(b1);
+				const c = g.input([si, si]).set(c1);
+				const e = g.input([si, si]).set(e1);
+
 				const result = g.output(
-					sine(
-						matmul(
-							a,
-							mult(
-								g.input([2, 2]).set([0.01, -0.1, 0.7, 4.001]),
-								add(
-									matmul(c, e),
-									matmul(
-										reshape(matmul(a, b), [2, 2]),
-										sum(
-											add(
-												reshape(add(b, c), [2, 2]),
-												reshape(add(e, c), [2, 2]),
+					add(
+						a,
+						sine(
+							matmul(
+								a,
+								mult(
+									g.input([si, si]).set(a1),
+									add(
+										matmul(c, e),
+										matmul(
+											reshape(matmul(a, b), [si, si]),
+											sum(
+												add(
+													reshape(add(b, c), [si, si]),
+													reshape(add(e, c), [si, si]),
+												),
 											),
 										),
 									),
@@ -77,16 +85,19 @@ const TensorPage: React.FC = () => {
 						),
 					),
 				);
+				//const result = g.output(add(a, b));
 
-				g.compile(result, [2, 2]);
+				g.compile(result, [si, si]);
+				setKernels(g.kernels.map((x) => x.context.kernelCode || ""));
 
-				for (let i = 0; i < 1000; i++) {
+				for (let i = 0; i < 10000; i++) {
 					const r = await g.run();
 					a.set(r);
 					if (i % 100 === 0) {
 						console.log("result[%s]", i, Array.from(r));
-						setResult(Array.from(r));
 					}
+					setResult(Array.from(r));
+					setEpoch(i);
 				}
 			} catch (err) {
 				console.log(err);
@@ -107,12 +118,14 @@ const TensorPage: React.FC = () => {
 			) : result ? (
 				<div>
 					<h2 className="text-xl font-semibold mb-2">Computation Result:</h2>
-					<pre className="bg-gray-100 p-2 rounded text-zinc-900">
+					epoch: {epoch}
+					<pre className="bg-gray-100 p-2 rounded text-zinc-900 relative">
 						{JSON.stringify(result, null, 2)}
 					</pre>
 					<p className="mt-2">
-						This is the result of multiplying a 2x3 matrix by a 3x2 matrix,
-						resulting in a 2x2 matrix.
+						{kernels.map((k) => (
+							<pre className="text-xs bg-zinc-900 text-zinc-400 m-10">{k}</pre>
+						))}
 					</p>
 				</div>
 			) : (

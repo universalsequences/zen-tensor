@@ -7,7 +7,7 @@ import { InputPlaceholder } from "./input";
 export class TensorGraph {
 	device: GPUDevice;
 	private contexts: KernelContext[] = [];
-	private kernels: Kernel[] = [];
+	kernels: Kernel[] = [];
 	private inputData: Map<string, Float32Array> = new Map();
 	private inputBuffers: Map<string, GPUBuffer> = new Map();
 	private inputCounter: number = 0;
@@ -150,7 +150,6 @@ export class TensorGraph {
 		// Get the final output
 		const finalKernel = this.kernels[this.kernels.length - 1];
 		const finalOutputBuffer = finalKernel.getOutputBuffer();
-
 
 		if (!finalOutputBuffer) {
 			throw new Error("Final output buffer not found");

@@ -16,6 +16,7 @@ export class Kernel {
 		this.inputBuffers = new Map(inputBuffers);
 
 		const code = context.getShaderCode();
+		this.context.kernelCode = code;
 		console.log(code);
 		const shaderModule = device.createShaderModule({
 			code,

@@ -5,6 +5,7 @@ import { TensorGraph } from "./graph";
 let counter = 1;
 
 export interface Context {
+	kernelCode?: string;
 	id: number;
 	children: Context[];
 	parentContext: Context | undefined;
@@ -31,6 +32,7 @@ export class KernelContext implements Context {
 	private inputs: Map<string, number> = new Map();
 	private outputs: Map<string, number> = new Map();
 	private idx = 0;
+	kernelCode?: string;
 
 	opType: OpType;
 	parentContext: Context | undefined;
