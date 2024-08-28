@@ -2,12 +2,16 @@ import { Context } from "./context";
 import { Tensor } from "./input";
 
 export enum OpType {
-  Regular=0,
-  Reduction=1,
-  Reshape=2,
+  Regular = 0,
+  Reduction = 1,
+  Reshape = 2,
 }
 
 export type Gen = (context: Context) => ASTNode;
+
+export type Arg = Gen | Tensor | number;
+
+export type PartialGen = (context: Context, ...arg: Arg[]) => ASTNode;
 
 export enum DataType {
   Scalar = 0,
@@ -26,8 +30,6 @@ export interface ASTNode {
   type: DataType;
   shape: number[]; // [rows, cols] for 2D, [length] for 1D
 }
-
-export type Arg = Gen | Tensor | number;
 
 /**
  * Used to convert a piece of data into a scalar representation (as a codegen string)

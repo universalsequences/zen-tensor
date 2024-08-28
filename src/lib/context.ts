@@ -28,6 +28,7 @@ export interface Context {
   outputs: Map<string, number>;
 }
 
+const visited = new Map<string, ASTNode>();
 /**
  * A KernelContext collects operations that may be run on the same kernel
  * */
@@ -75,6 +76,13 @@ export class KernelContext implements Context {
       return x(this);
     }
     const result = (x as Gen)(this);
+    // We're crossing context boundaries
+    const memoized = visited.get(result.variable);
+    if (memoized) {
+      this.addInput(memoized.variable);
+      return memoized;
+    }
+
     if (result.type === DataType.Tensor) {
       // return result;
     }
@@ -82,7 +90,6 @@ export class KernelContext implements Context {
       return result;
     }
     if (result.opType !== this.opType || result.opType === OpType.Reduction) {
-      // We're crossing context boundaries
       const outputName = `cross_context_output_${this.id}_${this.idx++}`;
       this.addInput(outputName);
       const buffer = this.tensorGraph.device.createBuffer({
@@ -94,7 +101,7 @@ export class KernelContext implements Context {
       const _out = `${outputName}_out`;
       result.context.addOutput(_out);
       const code = `${_out}[index] = ${toScalar(result)};`;
-      return {
+      let x = {
         context: result.context,
         dependencies: [result],
         opType: result.opType,
@@ -103,6 +110,8 @@ export class KernelContext implements Context {
         code: code,
         type: DataType.Tensor,
       };
+      visited.set(result.variable, x);
+      return x;
     }
     return result;
   }

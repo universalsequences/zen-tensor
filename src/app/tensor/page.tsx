@@ -42,12 +42,14 @@ const TensorPage: React.FC = () => {
 
         const device = await adapter.requestDevice();
         const g = new TensorGraph(device);
-        const si =4*4;
+        const si = 4 * 4;
 
         const a = g.tensor([si]).rand();
         const b = g.tensor([si]).rand();
         const dim = [Math.sqrt(si), Math.sqrt(si)];
-        const result = g.output(matmul(reshape(b, dim), reshape(a, dim)));
+        const m = matmul(reshape(b, dim), reshape(a, dim));
+        //const result = g.output(add(m, mean(add(m, add(m, m)))));
+        const result = g.output(add(m, mean(add(m, add(m, m)))));
 
         g.compile(result, [si]);
 

@@ -1,34 +1,37 @@
 import { Context } from "./context";
+import { memo } from "./memo";
 import { OpType, ASTNode, Arg, DataType } from "./zen";
 import { toScalar } from "./zen";
 
-const binaryOp =
-  (name: string, op: string) =>
-  (x: Arg, y: Arg) =>
-  (context: Context): ASTNode => {
-    context = context.useContext(OpType.Regular);
-    const _x = context.gen(x);
-    const _y = context.gen(y);
+const binaryOp = (name: string, op: string) => (x: Arg, y: Arg) =>
+  memo(
+    (context: Context): ASTNode => {
+      context = context.useContext(OpType.Regular);
+      const _x = context.gen(x);
+      const _y = context.gen(y);
 
-    // get shapes on args
-    const shapeX = _x.shape;
-    const shapeY = _y.shape;
+      // get shapes on args
+      const shapeX = _x.shape;
+      const shapeY = _y.shape;
 
-    // Determine output shape
-    let outputShape: number[];
-    if (arraysEqual(shapeX, shapeY)) {
-      outputShape = shapeX;
-    } else if (isScalar(shapeX) || isScalar(shapeY)) {
-      outputShape = isScalar(shapeX) ? shapeY : shapeX;
-    } else {
-      throw new Error(`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`);
-    }
+      // Determine output shape
+      let outputShape: number[];
+      if (arraysEqual(shapeX, shapeY)) {
+        outputShape = shapeX;
+      } else if (isScalar(shapeX) || isScalar(shapeY)) {
+        outputShape = isScalar(shapeX) ? shapeY : shapeX;
+      } else {
+        throw new Error(`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`);
+      }
 
-    const [variableName] = context.useVariables(`${name}_result`);
+      const [variableName] = context.useVariables(`${name}_result`);
 
-    let code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
-    return context.emit(variableName, code, OpType.Regular, outputShape, _x, _y);
-  };
+      let code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
+      return context.emit(variableName, code, OpType.Regular, outputShape, _x, _y);
+    },
+    x,
+    y,
+  );
 
 // Helper functions
 function arraysEqual(a: number[], b: number[]): boolean {
@@ -66,9 +69,8 @@ export const reduce =
 
 export const sum = reduce("+");
 
-export const mean =
-  (x: Arg) =>
-  (context: Context): ASTNode => {
+export const mean = (x: Arg) =>
+  memo((context: Context): ASTNode => {
     const reductionContext = context.useContext(OpType.Reduction);
     const _x = reductionContext.gen(x);
     const [sumVariable] = reductionContext.useVariables(`mean_sum`);
@@ -86,11 +88,11 @@ let ${resultVariable} = ${sumVariable} / f32(${countVariable});
 `;
 
     return reductionContext.emit(resultVariable, code, OpType.Reduction, _x.shape, _x); // Mean always outputs a single value
-  };
+  }, x);
 
 export const func = (name: string) => {
   return (freq: Arg) => {
-    return (context: Context): ASTNode => {
+    return memo((context: Context): ASTNode => {
       context = context.useContext(OpType.Regular);
       const [variableName] = context.useVariables(`${name}_result`);
       const _freq = context.gen(freq);
@@ -98,7 +100,7 @@ export const func = (name: string) => {
 let ${variableName} = ${name}(${toScalar(_freq)});
   `;
       return context.emit(variableName, code, OpType.Regular, _freq.shape, _freq);
-    };
+    }, freq);
   };
 };
 
@@ -107,7 +109,7 @@ export const log2 = func("log2");
 
 export const matmul =
   (a: Arg, b: Arg) =>
-  (context: Context): ASTNode => {
+  memo((context: Context): ASTNode => {
     context = context.useContext(OpType.Reduction);
     const _a = context.gen(a);
     const _b = context.gen(b);
@@ -151,4 +153,4 @@ let ${resultVar} = ${sum};
 
     let m = context.emit(resultVar, code, OpType.Reduction, outputShape, _a, _b);
     return m;
-  };
+  }, a, b);

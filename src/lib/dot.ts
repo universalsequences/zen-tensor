@@ -1,8 +1,9 @@
 import { OpType, Arg, Context, ASTNode } from "./index";
+import { memo } from "./memo";
 
 export const dot =
   (a: Arg, b: Arg) =>
-  (context: Context): ASTNode => {
+  memo((context: Context): ASTNode => {
     context = context.useContext(OpType.Reduction);
     const _a = context.gen(a);
     const _b = context.gen(b);
@@ -50,4 +51,4 @@ export const dot =
     } else {
       throw new Error(`Unsupported shapes for dot product: ${shapeA} and ${shapeB}`);
     }
-  };
+  }, a, b);
