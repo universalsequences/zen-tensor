@@ -1,111 +1,108 @@
 import { KernelContext } from "./context";
 
 export class Kernel {
-	context: KernelContext;
-	private pipeline: GPUComputePipeline;
-	private bindGroup: GPUBindGroup;
-	private inputBuffers: Map<string, GPUBuffer>;
-	private outputBuffers: Map<string, GPUBuffer> = new Map();
+  context: KernelContext;
+  private pipeline: GPUComputePipeline;
+  private bindGroup: GPUBindGroup;
+  private inputBuffers: Map<string, GPUBuffer>;
+  private outputBuffers: Map<string, GPUBuffer> = new Map();
 
-	constructor(
-		private device: GPUDevice,
-		context: KernelContext,
-		inputBuffers: Map<string, GPUBuffer>,
-		size: number,
-	) {
-		this.context = context;
-		this.inputBuffers = new Map(inputBuffers);
+  constructor(
+    private device: GPUDevice,
+    context: KernelContext,
+    inputBuffers: Map<string, GPUBuffer>,
+    size: number,
+  ) {
+    this.context = context;
+    this.inputBuffers = new Map(inputBuffers);
+    this.context.kernelCode = context.generateKernel();
+    const shaderModule = device.createShaderModule({
+      code: this.context.kernelCode,
+    });
 
-		const code = context.getShaderCode();
-		this.context.kernelCode = code;
+    this.pipeline = device.createComputePipeline({
+      layout: "auto",
+      compute: {
+        module: shaderModule,
+        entryPoint: "main",
+      },
+    });
 
-		const shaderModule = device.createShaderModule({
-			code,
-		});
+    const entries: GPUBindGroupEntry[] = [];
 
-		this.pipeline = device.createComputePipeline({
-			layout: "auto",
-			compute: {
-				module: shaderModule,
-				entryPoint: "main",
-			},
-		});
+    // Add input bindings
+    context.getInputs().forEach((name, index) => {
+      entries.push({
+        binding: index,
+        resource: { buffer: this.inputBuffers.get(name)! },
+      });
+    });
 
-		const entries: GPUBindGroupEntry[] = [];
+    // Create output buffers and add bindings
+    const outputs = context.getOutputs();
+    outputs.forEach((name, index) => {
+      const buffer = device.createBuffer({
+        size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      });
+      this.outputBuffers.set(name, buffer);
+      entries.push({
+        binding: context.getInputs().length + index,
+        resource: { buffer },
+      });
+    });
 
-		// Add input bindings
-		context.getInputs().forEach((name, index) => {
-			entries.push({
-				binding: index,
-				resource: { buffer: this.inputBuffers.get(name)! },
-			});
-		});
+    this.bindGroup = device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries,
+    });
+  }
 
-		// Create output buffers and add bindings
-		const outputs = context.getOutputs();
-		outputs.forEach((name, index) => {
-			const buffer = device.createBuffer({
-				size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
-				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-			});
-			this.outputBuffers.set(name, buffer);
-			entries.push({
-				binding: context.getInputs().length + index,
-				resource: { buffer },
-			});
-		});
+  getInputBuffer(name: string): GPUBuffer | undefined {
+    return this.inputBuffers.get(name);
+  }
 
-		this.bindGroup = device.createBindGroup({
-			layout: this.pipeline.getBindGroupLayout(0),
-			entries,
-		});
-	}
+  run(commandEncoder: GPUCommandEncoder, numWorkgroups: number) {
+    const passEncoder = commandEncoder.beginComputePass();
+    passEncoder.setPipeline(this.pipeline);
+    passEncoder.setBindGroup(0, this.bindGroup);
+    passEncoder.dispatchWorkgroups(numWorkgroups);
+    passEncoder.end();
+  }
 
-	getInputBuffer(name: string): GPUBuffer | undefined {
-		return this.inputBuffers.get(name);
-	}
+  getOutputBuffer(name?: string): GPUBuffer | undefined {
+    if (!name) {
+      for (const key of this.outputBuffers.keys()) {
+        return this.outputBuffers.get(key);
+      }
+      return undefined;
+    }
+    return this.outputBuffers.get(name);
+  }
 
-	run(commandEncoder: GPUCommandEncoder, numWorkgroups: number) {
-		const passEncoder = commandEncoder.beginComputePass();
-		passEncoder.setPipeline(this.pipeline);
-		passEncoder.setBindGroup(0, this.bindGroup);
-		passEncoder.dispatchWorkgroups(numWorkgroups);
-		passEncoder.end();
-	}
+  getOutputBuffers(): Map<string, GPUBuffer> {
+    return this.outputBuffers;
+  }
 
-	getOutputBuffer(name?: string): GPUBuffer | undefined {
-		if (!name) {
-			for (const key of this.outputBuffers.keys()) {
-				return this.outputBuffers.get(key);
-			}
-			return undefined;
-		}
-		return this.outputBuffers.get(name);
-	}
-
-	getOutputBuffers(): Map<string, GPUBuffer> {
-		return this.outputBuffers;
-	}
-
-	updateInputBuffer(name: string, buffer: GPUBuffer) {
-		this.inputBuffers.set(name, buffer);
-		// Recreate bind group with updated input buffer
-		const entries: GPUBindGroupEntry[] = [];
-		this.context.getInputs().forEach((inputName, index) => {
-			entries.push({
-				binding: index,
-				resource: { buffer: this.inputBuffers.get(inputName)! },
-			});
-		});
-		this.context.getOutputs().forEach((outputName, index) => {
-			entries.push({
-				binding: this.context.getInputs().length + index,
-				resource: { buffer: this.outputBuffers.get(outputName)! },
-			});
-		});
-		this.bindGroup = this.device.createBindGroup({
-			layout: this.pipeline.getBindGroupLayout(0),
-			entries,
-		});
-	}
+  updateTensorBuffer(name: string, buffer: GPUBuffer) {
+    this.inputBuffers.set(name, buffer);
+    // Recreate bind group with updated input buffer
+    const entries: GPUBindGroupEntry[] = [];
+    this.context.getInputs().forEach((inputName, index) => {
+      entries.push({
+        binding: index,
+        resource: { buffer: this.inputBuffers.get(inputName)! },
+      });
+    });
+    this.context.getOutputs().forEach((outputName, index) => {
+      entries.push({
+        binding: this.context.getInputs().length + index,
+        resource: { buffer: this.outputBuffers.get(outputName)! },
+      });
+    });
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries,
+    });
+  }
 }

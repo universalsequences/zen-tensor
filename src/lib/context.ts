@@ -26,24 +26,25 @@ export interface Context {
   code: string[];
   idx: number;
   outputs: Map<string, number>;
+  generateKernel: () => string;
 }
 
 const visited = new Map<string, ASTNode>();
 /**
  * A KernelContext collects operations that may be run on the same kernel
+ * Using this, it generates code for the
  * */
 export class KernelContext implements Context {
   code: string[] = [];
   inputs: Map<string, number> = new Map();
   outputs: Map<string, number> = new Map();
-  idx = 0;
   kernelCode?: string;
-
   opType: OpType;
   parentContext: Context | undefined;
   id: number;
   tensorGraph: TensorGraph;
   children: Context[] = [];
+  idx = 0;
 
   constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context) {
     this.opType = opType;
@@ -75,21 +76,20 @@ export class KernelContext implements Context {
     if (force) {
       return x(this);
     }
+
     const result = (x as Gen)(this);
-    // We're crossing context boundaries
     const memoized = visited.get(result.variable);
     if (memoized) {
       this.addInput(memoized.variable);
       return memoized;
     }
 
-    if (result.type === DataType.Tensor) {
-      // return result;
-    }
     if (result.opType === OpType.Reshape) {
       return result;
     }
+
     if (result.opType !== this.opType || result.opType === OpType.Reduction) {
+      // We're crossing context boundaries
       const outputName = `cross_context_output_${this.id}_${this.idx++}`;
       this.addInput(outputName);
       const buffer = this.tensorGraph.device.createBuffer({
@@ -98,9 +98,9 @@ export class KernelContext implements Context {
       });
       this.tensorGraph.inputBuffers.set(outputName, buffer);
 
-      const _out = `${outputName}_out`;
-      result.context.addOutput(_out);
-      const code = `${_out}[index] = ${toScalar(result)};`;
+      const out = `${outputName}_out`;
+      result.context.addOutput(out);
+      const code = `${out}[index] = ${toScalar(result)};`;
       let x = {
         context: result.context,
         dependencies: [result],
@@ -166,7 +166,7 @@ export class KernelContext implements Context {
     }
   }
 
-  getShaderCode(): string {
+  generateKernel(): string {
     const inputBindings = Array.from(this.inputs.entries())
       .map(
         ([name, index]) => `@group(0) @binding(${index}) var<storage, read> ${name}: array<f32>;`,

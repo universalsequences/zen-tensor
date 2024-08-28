@@ -42,25 +42,25 @@ const TensorPage: React.FC = () => {
 
         const device = await adapter.requestDevice();
         const g = new TensorGraph(device);
-        const si = 4 * 4;
+        const si = 8 * 8;
 
         const a = g.tensor([si]).rand();
         const b = g.tensor([si]).rand();
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(m, mean(add(m, add(m, m)))));
-        const result = g.output(add(m, mean(add(m, add(m, m)))));
-
+        const result = g.output(mult(0.1, add(m, m)));
+								 
         g.compile(result, [si]);
 
         setKernels(g.kernels.map((x) => x.context.kernelCode || ""));
 
-        for (let i = 0; i < 1; i++) {
+        for (let i = 0; i < 1000; i++) {
           const r = await g.run();
           a.set(r);
           setResult(Array.from(r));
           setEpoch(i);
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          //await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } catch (err) {
         console.log(err);

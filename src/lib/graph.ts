@@ -8,7 +8,7 @@ export class TensorGraph {
   private contexts: KernelContext[] = [];
   kernels: Kernel[] = [];
   private inputData: Map<string, Float32Array> = new Map();
-  private inputBuffers: Map<string, GPUBuffer> = new Map();
+  inputBuffers: Map<string, GPUBuffer> = new Map();
   private inputCounter: number = 0;
   outputSize: number = 0;
   outputShape: number[] = [1];
@@ -26,16 +26,12 @@ export class TensorGraph {
   }
 
   updateTensor(name: string, data: number[] | Float32Array) {
-    console.log("updating tensor name=%s", name, data);
     const inputArray = data instanceof Float32Array ? data : new Float32Array(data);
     this.inputData.set(name, inputArray);
 
     if (this.inputBuffers.has(name)) {
       const buffer = this.inputBuffers.get(name)!;
-      console.log("writing to buffer", name, buffer, inputArray);
       this.device.queue.writeBuffer(buffer, 0, inputArray);
-    } else {
-      console.log("could not write to buffer", name);
     }
   }
 
@@ -96,7 +92,6 @@ export class TensorGraph {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
       this.device.queue.writeBuffer(buffer, 0, data);
-      console.log("input data=", data, name, buffer);
       this.inputBuffers.set(name, buffer);
     });
 
@@ -107,25 +102,20 @@ export class TensorGraph {
   }
 
   async run(): Promise<Float32Array> {
-    console.log("Kernels we are running=", [...this.kernels]);
     const commandEncoder = this.device.createCommandEncoder();
     const WORKGROUP_SIZE = 64; // This should match your shader's workgroup size
 
     for (let i = 0; i < this.kernels.length; i++) {
       const kernel = this.kernels[i];
-      console.log("kernels i=0 *******", i);
       // If this is not the first kernel, we need to copy data from the previous kernel
       if (i > 0) {
         for (let j = 0; j < i; j++) {
-          console.log("looking at kernels j=0", j);
           const prevOutputs = this.kernels[j].getOutputBuffers();
           const currentInputs = kernel.context.getInputs();
           for (const inputName of currentInputs) {
             if (prevOutputs.has(inputName + "_out")) {
               const sourceBuffer = prevOutputs.get(inputName + "_out")!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
-              console.log("source buffer=", sourceBuffer);
-              console.log("dest buffer=", destBuffer);
               await logBuffer(this.device, sourceBuffer, `Kernel ${i} input ${inputName}`);
 
               commandEncoder.copyBufferToBuffer(
@@ -150,7 +140,6 @@ export class TensorGraph {
     // Get the final outpt
     const finalKernel = this.kernels[this.kernels.length - 1];
     const finalOutputBuffer = finalKernel.getOutputBuffer();
-    console.log("kernels = ", this.kernels, finalOutputBuffer);
     if (!finalOutputBuffer) {
       throw new Error("Final output buffer not foundxyz FUCKKKKK");
     }
@@ -207,7 +196,6 @@ async function logBuffer(device: GPUDevice, buffer: GPUBuffer, label: string) {
 }
 
 const everyDependencyMet = (context: Context, contexts: Context[]) => {
-  console.log("is every dependency met?", context, contexts);
   for (const input of context.inputs.keys()) {
     if (input.includes("tensor")) {
       continue;
@@ -217,7 +205,6 @@ const everyDependencyMet = (context: Context, contexts: Context[]) => {
         return c.outputs.has(input + "_out");
       })
     ) {
-      console.log("missing input=", input, contexts);
       return false;
     }
   }
