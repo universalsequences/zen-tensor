@@ -1,199 +1,197 @@
-import { GenResult, Arg, OpType, Gen, Type, variable } from "./zen";
-import { InputPlaceholder } from "./input";
+import { ASTNode, Arg, OpType, Gen, DataType, toScalar } from "./zen";
+import { Tensor } from "./input";
 import { TensorGraph } from "./graph";
 
-let counter = 1;
+let contextIdx = 1;
 
 export interface Context {
-	kernelCode?: string;
-	id: number;
-	children: Context[];
-	parentContext: Context | undefined;
-	opType: OpType;
-	gen: (x: Arg, force?: boolean) => GenResult;
-	useVariables: (...names: string[]) => string[];
-	emit: (
-		variable: string,
-		code: string,
-		opType: OpType,
-		shape: number[],
-		...dependencies: GenResult[]
-	) => GenResult;
-	useContext: (opType: OpType) => Context;
-	getBindingIndex: (name: string) => number;
-	addInput: (x: string) => void;
-	addOutput: (x: string) => void;
-	getShape: (variable: string) => number[];
-	setShape: (variable: string, shape: number[]) => void;
+  kernelCode?: string;
+  id: number;
+  children: Context[];
+  parentContext: Context | undefined;
+  opType: OpType;
+  gen: (x: Arg, force?: boolean) => ASTNode;
+  useVariables: (...names: string[]) => string[];
+  emit: (
+    variable: string,
+    code: string,
+    opType: OpType,
+    shape: number[],
+    ...dependencies: ASTNode[]
+  ) => ASTNode;
+  useContext: (opType: OpType) => Context;
+  addInput: (x: string) => void;
+  addOutput: (x: string) => void;
+  inputs: Map<string, number>;
+  code: string[];
+  idx: number;
+  outputs: Map<string, number>;
 }
 
+/**
+ * A KernelContext collects operations that may be run on the same kernel
+ * */
 export class KernelContext implements Context {
-	private code: string[] = [];
-	private inputs: Map<string, number> = new Map();
-	private outputs: Map<string, number> = new Map();
-	private idx = 0;
-	kernelCode?: string;
+  code: string[] = [];
+  inputs: Map<string, number> = new Map();
+  outputs: Map<string, number> = new Map();
+  idx = 0;
+  kernelCode?: string;
 
-	opType: OpType;
-	parentContext: Context | undefined;
-	id: number;
-	tensorGraph: TensorGraph;
-	private shapes: Map<string, number[]> = new Map();
-	children: Context[] = [];
+  opType: OpType;
+  parentContext: Context | undefined;
+  id: number;
+  tensorGraph: TensorGraph;
+  children: Context[] = [];
 
-	constructor(
-		opType: OpType,
-		tensorGraph: TensorGraph,
-		parentContext?: Context,
-	) {
-		this.opType = opType;
-		this.tensorGraph = tensorGraph;
-		this.parentContext = parentContext;
-		this.id = counter++;
-		if (parentContext) {
-			parentContext.children.push(this);
-		}
-	}
+  constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context) {
+    this.opType = opType;
+    this.tensorGraph = tensorGraph;
+    this.parentContext = parentContext;
+    this.id = contextIdx++;
+    if (parentContext) {
+      parentContext.children.push(this);
+    }
+  }
 
-	getShape(variable: string): number[] {
-		return this.shapes.get(variable) || [];
-	}
+  gen(x: Arg, force?: boolean): ASTNode {
+    if (typeof x === "number") {
+      return {
+        dependencies: [],
+        context: this,
+        opType: OpType.Regular,
+        type: DataType.Scalar,
+        variable: `${x}`,
+        code: "",
+        shape: [1],
+      };
+    }
+    if (x instanceof Tensor) {
+      const rs = (x as Tensor).gen()(this);
+      return rs;
+    }
 
-	setShape(variable: string, shape: number[]) {
-		this.shapes.set(variable, shape);
-	}
+    if (force) {
+      return x(this);
+    }
+    const result = (x as Gen)(this);
+    if (result.type === DataType.Tensor) {
+      // return result;
+    }
+    if (result.opType === OpType.Reshape) {
+      return result;
+    }
+    if (result.opType !== this.opType || result.opType === OpType.Reduction) {
+      // We're crossing context boundaries
+      const outputName = `cross_context_output_${this.id}_${this.idx++}`;
+      this.addInput(outputName);
+      const buffer = this.tensorGraph.device.createBuffer({
+        size: this.tensorGraph.outputSize * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      this.tensorGraph.inputBuffers.set(outputName, buffer);
 
-	gen(x: Arg, force?: boolean): GenResult {
-		if (x instanceof InputPlaceholder) {
-			const rs = (x as InputPlaceholder).getGen()(this);
-			return rs;
-		}
+      const _out = `${outputName}_out`;
+      result.context.addOutput(_out);
+      const code = `${_out}[index] = ${toScalar(result)};`;
+      return {
+        context: result.context,
+        dependencies: [result],
+        opType: result.opType,
+        variable: `${outputName}`,
+        shape: result.shape,
+        code: code,
+        type: DataType.Tensor,
+      };
+    }
+    return result;
+  }
 
-		if (force) {
-			return x(this);
-		}
-		const result = (x as Gen)(this);
-		if (result.type === Type.Tensor) {
-			// return result;
-		}
-		if (result.opType !== this.opType || result.opType === OpType.Reduction) {
-			// We're crossing context boundaries
-			const outputName = `cross_context_output_${this.id}_${this.idx++}`;
-			this.addInput(outputName);
-			const buffer = this.tensorGraph.device.createBuffer({
-				size: this.tensorGraph.outputSize * 4,
-				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-			});
-			this.tensorGraph.inputBuffers.set(outputName, buffer);
+  useVariables(...names: string[]) {
+    this.idx++;
+    return names.map((n) => `${n}${this.idx}`);
+  }
 
-			const _out = `${outputName}_out`;
-			result.context.addOutput(_out);
-			const code = `${_out}[index] = ${variable(result)};`;
-			return {
-				context: result.context,
-				dependencies: [result],
-				opType: result.opType,
-				variable: `${outputName}`,
-				shape: result.shape,
-				code: code,
-				type: Type.Tensor,
-			};
-		}
-		return result;
-	}
+  emit(
+    variable: string,
+    code: string,
+    opType: OpType,
+    shape: number[],
+    ...dependencies: ASTNode[]
+  ): ASTNode {
+    return {
+      context: this,
+      variable,
+      code,
+      shape,
+      dependencies,
+      opType,
+      type: DataType.Scalar,
+    };
+  }
 
-	useVariables(...names: string[]) {
-		this.idx++;
-		return names.map((n) => `${n}${this.idx}`);
-	}
+  useContext(opType: OpType): Context {
+    if (this.opType !== opType || opType === OpType.Reduction) {
+      const childrenOfParentWithType =
+        this.parentContext?.children.filter((x) => x.opType === opType) || [];
+      if (this.opType === opType) {
+        childrenOfParentWithType.length = 0;
+      }
+      if (childrenOfParentWithType.length > 0) {
+        return childrenOfParentWithType[0];
+      }
+      return new KernelContext(opType, this.tensorGraph, this);
+    }
+    return this;
+  }
 
-	emit(
-		variable: string,
-		code: string,
-		opType: OpType,
-		shape: number[],
-		...dependencies: GenResult[]
-	): GenResult {
-		return {
-			context: this,
-			variable,
-			code,
-			shape,
-			dependencies,
-			opType,
-			type: Type.Scalar,
-		};
-	}
+  addInput(name: string) {
+    if (!this.inputs.has(name)) {
+      this.inputs.set(name, this.inputs.size);
+    }
+  }
 
-	useContext(opType: OpType): Context {
-		if (this.opType !== opType || opType === OpType.Reduction) {
-			const childrenOfParentWithType =
-				this.parentContext?.children.filter((x) => x.opType === opType) || [];
-			if (this.opType === opType) {
-				childrenOfParentWithType.length = 0;
-			}
-			if (childrenOfParentWithType.length > 0) {
-				return childrenOfParentWithType[0];
-			}
-			return new KernelContext(opType, this.tensorGraph, this);
-		}
-		return this;
-	}
+  addOutput(name: string) {
+    if (!this.outputs.has(name)) {
+      this.outputs.set(name, this.outputs.size);
+    }
+  }
 
-	addInput(name: string) {
-		if (!this.inputs.has(name)) {
-			this.inputs.set(name, this.inputs.size);
-		}
-	}
+  getShaderCode(): string {
+    const inputBindings = Array.from(this.inputs.entries())
+      .map(
+        ([name, index]) => `@group(0) @binding(${index}) var<storage, read> ${name}: array<f32>;`,
+      )
+      .join("\n");
 
-	addOutput(name: string) {
-		if (!this.outputs.has(name)) {
-			this.outputs.set(name, this.outputs.size);
-		}
-	}
+    const outputBindings = Array.from(this.outputs.entries())
+      .map(
+        ([name, index]) =>
+          `@group(0) @binding(${this.inputs.size + index}) var<storage, read_write> ${name}: array<f32>;`,
+      )
+      .join("\n");
 
-	getBindingIndex(name: string): number {
-		if (this.inputs.has(name)) {
-			return this.inputs.get(name)!;
-		}
-		if (this.outputs.has(name)) {
-			return this.inputs.size + this.outputs.get(name)!;
-		}
-		throw new Error(`Binding index not found for ${name}`);
-	}
-
-	getShaderCode(): string {
-		const inputBindings = Array.from(this.inputs.entries())
-			.map(
-				([name, index]) =>
-					`@group(0) @binding(${index}) var<storage, read> ${name}: array<f32>;`,
-			)
-			.join("\n");
-
-		const outputBindings = Array.from(this.outputs.entries())
-			.map(
-				([name, index]) =>
-					`@group(0) @binding(${this.inputs.size + index}) var<storage, read_write> ${name}: array<f32>;`,
-			)
-			.join("\n");
-
-		return `
-      ${inputBindings}
-      ${outputBindings}
+    return `
+${inputBindings}
+${outputBindings}
 
       @compute @workgroup_size(64)
       fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let index = global_id.x;
-        ${this.code.join("\n")}
+${this.code
+  .filter((x) => x !== "")
+  .flatMap((c) => c.split("\n"))
+  .map((x) => "        " + x)
+  .join("\n")}
       }
     `;
-	}
+  }
 
-	getInputs(): string[] {
-		return Array.from(this.inputs.keys());
-	}
+  getInputs(): string[] {
+    return Array.from(this.inputs.keys());
+  }
 
-	getOutputs(): string[] {
-		return Array.from(this.outputs.keys());
-	}
+  getOutputs(): string[] {
+    return Array.from(this.outputs.keys());
+  }
 }

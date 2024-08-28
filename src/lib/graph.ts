@@ -1,8 +1,7 @@
 import { KernelContext, Context } from "./context";
 import { Kernel } from "./kernel";
-import { OpType, Arg, Gen, GenResult, Type, variable } from "./zen";
-import { InputPlaceholder } from "./input";
-//
+import { OpType, Arg, Gen, ASTNode, DataType, toScalar } from "./zen";
+import { Tensor } from "./input";
 
 export class TensorGraph {
 	device: GPUDevice;
@@ -18,22 +17,26 @@ export class TensorGraph {
 		this.device = device;
 	}
 
-	input(shape: number[]): InputPlaceholder {
-		const inputName = `input_${this.inputCounter++}`;
+	tensor(shape: number[]): Tensor {
+		const tensorName = `tensor_${this.inputCounter++}`;
 		const size = shape.reduce((a, b) => a * b, 1);
-		const placeholder = new InputPlaceholder(inputName, this, shape);
-		this.inputData.set(inputName, new Float32Array(size));
+		const placeholder = new Tensor(tensorName, this, shape);
+		this.inputData.set(tensorName, new Float32Array(size));
 		return placeholder;
 	}
 
-	updateInput(name: string, data: number[] | Float32Array) {
+	updateTensor(name: string, data: number[] | Float32Array) {
+		console.log("updating tensor name=%s", name, data);
 		const inputArray =
 			data instanceof Float32Array ? data : new Float32Array(data);
 		this.inputData.set(name, inputArray);
 
 		if (this.inputBuffers.has(name)) {
 			const buffer = this.inputBuffers.get(name)!;
+			console.log("writing to buffer", name, buffer, inputArray);
 			this.device.queue.writeBuffer(buffer, 0, inputArray);
+		} else {
+			console.log("could not write to buffer", name);
 		}
 	}
 
@@ -42,7 +45,7 @@ export class TensorGraph {
 			const result = context.gen(x);
 			const [v] = context.useVariables("output");
 			context.addOutput(v);
-			const code = `${v}[index] = ${variable(result, Type.Scalar)};`;
+			const code = `${v}[index] = ${toScalar(result, DataType.Scalar)};`;
 			return context.emit(v, code, OpType.Regular, this.outputShape, result);
 		};
 	}
@@ -52,13 +55,10 @@ export class TensorGraph {
 		this.outputSize = outputShape.reduce((a, b) => a * b, 1);
 
 		this.contexts = [];
-		let currentContext = new KernelContext(
-			OpType.Regular,
-			this,
-		);
+		let currentContext = new KernelContext(OpType.Regular, this);
 		this.contexts.push(currentContext);
 
-		const traverse = (node: GenResult) => {
+		const traverse = (node: ASTNode) => {
 			if (node.context !== currentContext) {
 				currentContext = node.context;
 				this.contexts = [currentContext, ...this.contexts];
@@ -68,6 +68,7 @@ export class TensorGraph {
 		};
 
 		const result = graph(currentContext);
+		console.log("graph result=", result);
 		traverse(result);
 
 		// Create input buffers
@@ -77,131 +78,43 @@ export class TensorGraph {
 				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 			});
 			this.device.queue.writeBuffer(buffer, 0, data);
+			console.log("input data=", data, name, buffer);
 			this.inputBuffers.set(name, buffer);
 		});
 
 		// Create kernels
 		this.kernels = this.contexts.map(
-			(context) => new Kernel(this.device, context, this.inputBuffers, this.outputSize),
-
+			(context) =>
+				new Kernel(this.device, context, this.inputBuffers, this.outputSize),
 		);
-	}
-
-	private async readBuffer(
-		buffer: GPUBuffer,
-		size: number,
-	): Promise<Float32Array> {
-		const readBuffer = this.device.createBuffer({
-			size: size * Float32Array.BYTES_PER_ELEMENT,
-			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-		});
-
-		const commandEncoder = this.device.createCommandEncoder();
-		commandEncoder.copyBufferToBuffer(
-			buffer,
-			0,
-			readBuffer,
-			0,
-			size * Float32Array.BYTES_PER_ELEMENT,
-		);
-
-		this.device.queue.submit([commandEncoder.finish()]);
-
-		await readBuffer.mapAsync(GPUMapMode.READ);
-		const arrayBuffer = readBuffer.getMappedRange();
-		const resultArray = new Float32Array(arrayBuffer.slice(0));
-		readBuffer.unmap();
-		readBuffer.destroy();
-
-		return resultArray;
-	}
-
-	async run2(): Promise<Float32Array> {
-		const commandEncoder = this.device.createCommandEncoder();
-
-		for (let i = 0; i < this.kernels.length; i++) {
-			const kernel = this.kernels[i];
-
-			// If this is not the first kernel, we need to copy data from the previous kernel
-			if (i > 0) {
-				const prevKernel = this.kernels[i - 1];
-				for (let j = 0; j < i; j++) {
-					const prevOutputs = this.kernels[j].getOutputBuffers();
-					//const prevOutputs = prevKernel.getOutputBuffers();
-					const currentInputs = kernel.context.getInputs();
-
-					for (const inputName of currentInputs) {
-						if (prevOutputs.has(inputName + "_out")) {
-							const sourceBuffer = prevOutputs.get(inputName + "_out")!;
-							const destBuffer = kernel.getInputBuffer(inputName)!;
-
-							commandEncoder.copyBufferToBuffer(
-								sourceBuffer,
-								0,
-								destBuffer,
-								0,
-								this.outputSize * Float32Array.BYTES_PER_ELEMENT,
-							);
-						}
-					}
-				}
-			}
-
-			// Run the current kernel
-			kernel.run(commandEncoder, this.outputSize);
-		}
-
-		// Get the final output
-		const finalKernel = this.kernels[this.kernels.length - 1];
-		const finalOutputBuffer = finalKernel.getOutputBuffer();
-
-		if (!finalOutputBuffer) {
-			throw new Error("Final output buffer not found");
-		}
-
-		// Copy final output to a readable buffer
-		const resultBuffer = this.device.createBuffer({
-			size: this.outputSize * Float32Array.BYTES_PER_ELEMENT,
-			usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-		});
-
-		commandEncoder.copyBufferToBuffer(
-			finalOutputBuffer,
-			0,
-			resultBuffer,
-			0,
-			this.outputSize * Float32Array.BYTES_PER_ELEMENT,
-		);
-
-		// Submit all command encoder operations
-		this.device.queue.submit([commandEncoder.finish()]);
-
-		// Read the result
-		await resultBuffer.mapAsync(GPUMapMode.READ);
-		const arrayBuffer = resultBuffer.getMappedRange();
-		const resultArray = new Float32Array(arrayBuffer.slice(0));
-		resultBuffer.unmap();
-
-		resultBuffer.destroy();
-
-		return resultArray;
 	}
 
 	async run(): Promise<Float32Array> {
+		console.log("Kernels we are running=", [...this.kernels]);
 		const commandEncoder = this.device.createCommandEncoder();
 		const WORKGROUP_SIZE = 64; // This should match your shader's workgroup size
 
 		for (let i = 0; i < this.kernels.length; i++) {
 			const kernel = this.kernels[i];
+			console.log("kernels i=0 *******", i);
 			// If this is not the first kernel, we need to copy data from the previous kernel
 			if (i > 0) {
 				for (let j = 0; j < i; j++) {
+					console.log("looking at kernels j=0", j);
 					const prevOutputs = this.kernels[j].getOutputBuffers();
 					const currentInputs = kernel.context.getInputs();
 					for (const inputName of currentInputs) {
 						if (prevOutputs.has(inputName + "_out")) {
 							const sourceBuffer = prevOutputs.get(inputName + "_out")!;
 							const destBuffer = kernel.getInputBuffer(inputName)!;
+							console.log("source buffer=", sourceBuffer);
+							console.log("dest buffer=", destBuffer);
+							await logBuffer(
+								this.device,
+								sourceBuffer,
+								`Kernel ${i} input ${inputName}`,
+							);
+
 							commandEncoder.copyBufferToBuffer(
 								sourceBuffer,
 								0,
@@ -221,11 +134,12 @@ export class TensorGraph {
 			kernel.run(commandEncoder, numWorkgroups);
 		}
 
-		// Get the final output
+		// Get the final outpt
 		const finalKernel = this.kernels[this.kernels.length - 1];
 		const finalOutputBuffer = finalKernel.getOutputBuffer();
+		console.log("kernels = ", this.kernels, finalOutputBuffer);
 		if (!finalOutputBuffer) {
-			throw new Error("Final output buffer not found");
+			throw new Error("Final output buffer not foundxyz FUCKKKKK");
 		}
 
 		// Copy final output to a readable buffer
@@ -254,16 +168,27 @@ export class TensorGraph {
 		return resultArray;
 	}
 
-	// Helper method to determine the expected result length
-	private getExpectedResultLength(): number {
-		const finalKernel = this.kernels[this.kernels.length - 1];
-		return this.outputSize;
-	}
-
 	destroy() {
 		this.inputBuffers.forEach((buffer) => buffer.destroy());
 		this.kernels.forEach((kernel) => {
-			kernel.getOutputBuffer("output").destroy();
+			kernel.getOutputBuffer("output")?.destroy();
 		});
 	}
+}
+
+async function logBuffer(device: GPUDevice, buffer: GPUBuffer, label: string) {
+	const stagingBuffer = device.createBuffer({
+		size: buffer.size,
+		usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+	});
+
+	const commandEncoder = device.createCommandEncoder();
+	commandEncoder.copyBufferToBuffer(buffer, 0, stagingBuffer, 0, buffer.size);
+	device.queue.submit([commandEncoder.finish()]);
+
+	await stagingBuffer.mapAsync(GPUMapMode.READ);
+	const copyArrayBuffer = stagingBuffer.getMappedRange();
+	const data = new Float32Array(copyArrayBuffer);
+	console.log(`${label}:`, Array.from(data));
+	stagingBuffer.unmap();
 }

@@ -1,41 +1,45 @@
 import { Context } from "./context";
-import { InputPlaceholder } from "./input";
+import { Tensor } from "./input";
+
 export enum OpType {
-	Regular,
-	Reduction,
+  Regular=0,
+  Reduction=1,
+  Reshape=2,
 }
 
-export type Gen = (context: Context) => GenResult;
+export type Gen = (context: Context) => ASTNode;
 
-export enum Type {
-	Scalar = 0,
-	Tensor = 1,
+export enum DataType {
+  Scalar = 0,
+  Tensor = 1,
 }
 
-export const variable = (
-	x: GenResult,
-	type: Type = Type.Scalar,
-	index?: string,
-) => {
-	if (x.type === Type.Tensor && type === Type.Scalar) {
-		if (index) {
-			return `${x.variable}[${index}]`;
-		} else {
-			return `${x.variable}[index]`;
-		}
-	}
-	return x.variable;
+/**
+ * Each operation returns GenResult, effectively as an node in the AST
+ * */
+export interface ASTNode {
+  variable: string;
+  code: string; // the code contribution to this kernel (for this AST node)
+  dependencies: ASTNode[];
+  opType: OpType;
+  context: Context;
+  type: DataType;
+  shape: number[]; // [rows, cols] for 2D, [length] for 1D
+}
+
+export type Arg = Gen | Tensor | number;
+
+/**
+ * Used to convert a piece of data into a scalar representation (as a codegen string)
+ *
+ * */
+export const toScalar = (data: ASTNode, type: DataType = DataType.Scalar, index?: string) => {
+  if (data.type === DataType.Tensor && type === DataType.Scalar) {
+    if (index) {
+      return `${data.variable}[${index}]`;
+    } else {
+      return `${data.variable}[index]`;
+    }
+  }
+  return data.variable;
 };
-
-export interface GenResult {
-	variable: string;
-	code: string;
-	dependencies: GenResult[];
-	opType: OpType;
-	context: Context;
-	type: Type;
-	shape: number[]; // [rows, cols] for 2D, [length] for 1D
-}
-
-export type Arg = Gen | InputPlaceholder;
-

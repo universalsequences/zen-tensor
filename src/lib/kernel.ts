@@ -11,14 +11,14 @@ export class Kernel {
 		private device: GPUDevice,
 		context: KernelContext,
 		inputBuffers: Map<string, GPUBuffer>,
-    size: number
+		size: number,
 	) {
 		this.context = context;
 		this.inputBuffers = new Map(inputBuffers);
 
 		const code = context.getShaderCode();
 		this.context.kernelCode = code;
-		console.log(code);
+
 		const shaderModule = device.createShaderModule({
 			code,
 		});
@@ -65,16 +65,6 @@ export class Kernel {
 		return this.inputBuffers.get(name);
 	}
 
-	/*
-	run(commandEncoder: GPUCommandEncoder, size: number) {
-		const passEncoder = commandEncoder.beginComputePass();
-		passEncoder.setPipeline(this.pipeline);
-		passEncoder.setBindGroup(0, this.bindGroup);
-		passEncoder.dispatchWorkgroups(Math.ceil(size / 64));
-		passEncoder.end();
-	}
-  */
-
 	run(commandEncoder: GPUCommandEncoder, numWorkgroups: number) {
 		const passEncoder = commandEncoder.beginComputePass();
 		passEncoder.setPipeline(this.pipeline);
@@ -88,6 +78,7 @@ export class Kernel {
 			for (const key of this.outputBuffers.keys()) {
 				return this.outputBuffers.get(key);
 			}
+			return undefined;
 		}
 		return this.outputBuffers.get(name);
 	}
