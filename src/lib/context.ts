@@ -4,49 +4,52 @@ import { TensorGraph } from "./graph";
 
 let contextIdx = 1;
 
-export interface Context {
-  kernelCode?: string;
-  id: number;
-  children: Context[];
-  parentContext: Context | undefined;
+export interface BaseContext<T> {
+  code: string[];
   opType: OpType;
-  gen: (x: Arg, force?: boolean) => ASTNode;
-  useVariables: (...names: string[]) => string[];
   emit: (
     variable: string,
     code: string,
     opType: OpType,
     shape: number[],
-    ...dependencies: ASTNode[]
-  ) => ASTNode;
-  useContext: (opType: OpType) => Context;
+    ...dependencies: T[]
+  ) => T;
+  useVariables: (...names: string[]) => string[];
+}
+
+export type Context<T> = BaseContext<T> & {
+  useContext: (opType: OpType) => Context<T>;
+  kernelCode?: string;
+  id: number;
+  children: Context<T>[];
+  parentContext: Context<T> | undefined;
+  gen: (x: Arg, force?: boolean) => T;
   addInput: (x: string) => void;
   addOutput: (x: string) => void;
   inputs: Map<string, number>;
-  code: string[];
   idx: number;
   outputs: Map<string, number>;
   generateKernel: () => string;
-}
+};
 
 const visited = new Map<string, ASTNode>();
 /**
  * A KernelContext collects operations that may be run on the same kernel
  * Using this, it generates code for the
  * */
-export class KernelContext implements Context {
+export class KernelContext implements Context<ASTNode> {
   code: string[] = [];
   inputs: Map<string, number> = new Map();
   outputs: Map<string, number> = new Map();
   kernelCode?: string;
   opType: OpType;
-  parentContext: Context | undefined;
+  parentContext: Context<ASTNode> | undefined;
   id: number;
   tensorGraph: TensorGraph;
-  children: Context[] = [];
+  children: Context<ASTNode>[] = [];
   idx = 0;
 
-  constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context) {
+  constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context<ASTNode>) {
     this.opType = opType;
     this.tensorGraph = tensorGraph;
     this.parentContext = parentContext;
@@ -109,6 +112,7 @@ export class KernelContext implements Context {
         shape: result.shape,
         code: code,
         type: DataType.Tensor,
+        gradientVariable: result.gradientVariable
       };
       visited.set(result.variable, x);
       return x;
@@ -128,8 +132,10 @@ export class KernelContext implements Context {
     shape: number[],
     ...dependencies: ASTNode[]
   ): ASTNode {
+    const [gradientVariable] = this.useVariables(`grad_${variable}`);
     return {
       context: this,
+      gradientVariable,
       variable,
       code,
       shape,
@@ -139,7 +145,7 @@ export class KernelContext implements Context {
     };
   }
 
-  useContext(opType: OpType): Context {
+  useContext(opType: OpType): Context<ASTNode> {
     if (this.opType !== opType || opType === OpType.Reduction) {
       const childrenOfParentWithType =
         this.parentContext?.children.filter((x) => x.opType === opType) || [];

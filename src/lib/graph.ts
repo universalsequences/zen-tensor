@@ -2,6 +2,7 @@ import { KernelContext, Context } from "./context";
 import { Kernel } from "./kernel";
 import { OpType, Arg, Gen, ASTNode, DataType, toScalar } from "./zen";
 import { Tensor } from "./input";
+import { backpass, generateBackwardPass } from "./back";
 
 export class TensorGraph {
   device: GPUDevice;
@@ -36,7 +37,7 @@ export class TensorGraph {
   }
 
   output(x: Arg): Gen {
-    return (context: Context) => {
+    return (context: Context<ASTNode>) => {
       const result = context.gen(x);
       const [v] = context.useVariables("output");
       context.addOutput(v);
@@ -53,7 +54,7 @@ export class TensorGraph {
     let currentContext = new KernelContext(OpType.Regular, this);
     // this.contexts.push(currentContext);
 
-    const allContexts = new Set<Context>();
+    const allContexts = new Set<Context<ASTNode>>();
     const visited = new Set<ASTNode>();
     const traverse = (node: ASTNode) => {
       allContexts.add(node.context);
@@ -73,6 +74,8 @@ export class TensorGraph {
 
     const result = graph(currentContext);
     traverse(result);
+
+    backpass(result);
 
     // brute force remaining contexts via dependencies...
     for (let i = 0; i < allContexts.size * 2; i++) {

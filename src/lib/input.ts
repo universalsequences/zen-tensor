@@ -1,6 +1,6 @@
 import { TensorGraph } from "./graph";
 import { Context } from "./context";
-import { Gen, DataType, OpType } from "./zen";
+import { Gen, DataType, OpType, ASTNode } from "./zen";
 import { memo } from "./memo";
 
 export class Tensor {
@@ -46,12 +46,12 @@ export class Tensor {
   }
 
   gen(): Gen {
-    return memo((context: Context) => {
+    return memo((context: Context<ASTNode>) => {
       context.addInput(this.name);
       return {
         ...context.emit(this.name, "", OpType.Regular, this.shape),
         type: DataType.Tensor,
       };
-    });
+    }, () => "");
   }
 }

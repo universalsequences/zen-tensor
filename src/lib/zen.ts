@@ -1,3 +1,4 @@
+import { BGen } from "./back";
 import { Context } from "./context";
 import { Tensor } from "./input";
 
@@ -7,11 +8,11 @@ export enum OpType {
   Reshape = 2,
 }
 
-export type Gen = (context: Context) => ASTNode;
+export type Gen = (context: Context<ASTNode>) => ASTNode;
 
 export type Arg = Gen | Tensor | number;
 
-export type PartialGen = (context: Context, ...arg: Arg[]) => ASTNode;
+export type PartialGen = (context: Context<ASTNode>, ...arg: Arg[]) => ASTNode;
 
 export enum DataType {
   Scalar = 0,
@@ -26,9 +27,11 @@ export interface ASTNode {
   code: string; // the code contribution to this kernel (for this AST node)
   dependencies: ASTNode[];
   opType: OpType;
-  context: Context;
+  context: Context<ASTNode>;
   type: DataType;
   shape: number[]; // [rows, cols] for 2D, [length] for 1D
+  backprop?: (x: string) => string;
+gradientVariable: string; // New field for gradient variable
 }
 
 /**
