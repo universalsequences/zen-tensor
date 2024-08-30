@@ -167,18 +167,34 @@ export class TensorGraph {
     }
   }
 
-  async run(): Promise<Float32Array> {
-    const commandEncoder = this.device.createCommandEncoder();
+  async run() {
     const WORKGROUP_SIZE = 64; // This should match your shader's workgroup size
+    const commandEncoder = this.device.createCommandEncoder();
 
-    for (let i = 0; i < this.kernels.length; i++) {
-      const kernel = this.kernels[i];
+    const kernels = [...this.kernels, ...this.backKernels];
+    for (let i = 0; i < kernels.length; i++) {
+      const commandEncoder = this.device.createCommandEncoder();
+      const kernel = kernels[i];
       // If this is not the first kernel, we need to copy data from the previous kernel
       if (i > 0) {
         for (let j = 0; j < i; j++) {
-          const prevOutputs = this.kernels[j].getOutputBuffers();
-          const currentInputs = kernel.context.getInputs();
+          const prevOutputs = kernels[j].getOutputBuffers();
+          const currentInputs = kernel.inputs;
           for (const inputName of currentInputs) {
+            console.log("inputName=%s", inputName, prevOutputs);
+            const slicedInputName = inputName.slice(0, inputName.length - "_intermediate".length);
+            console.log("sliced input name=", slicedInputName, prevOutputs);
+            if (inputName.includes("intermediate") && prevOutputs.has(slicedInputName)) {
+              const sourceBuffer = prevOutputs.get(slicedInputName)!;
+              const destBuffer = kernel.getInputBuffer(inputName)!;
+              commandEncoder.copyBufferToBuffer(
+                sourceBuffer,
+                0,
+                destBuffer,
+                0,
+                this.outputSize * Float32Array.BYTES_PER_ELEMENT,
+              );
+            }
             if (prevOutputs.has(inputName + "_out")) {
               const sourceBuffer = prevOutputs.get(inputName + "_out")!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
@@ -201,6 +217,39 @@ export class TensorGraph {
 
       // Run the current kernel with the calculated number of workgroups
       kernel.run(commandEncoder, numWorkgroups);
+
+      this.device.queue.submit([commandEncoder.finish()]);
+    }
+
+    const grads = new Map<string, Float32Array>();
+    for (const kernel of kernels) {
+      for (const output of kernel.outputs) {
+        if (!output.includes("grad")) {
+          continue;
+        }
+        const commandEncoder = this.device.createCommandEncoder();
+        const destBuffer = kernel.getOutputBuffer(output);
+        if (destBuffer) {
+          console.log("trying to fetch buffer for output=", output);
+          const resultBuffer = this.device.createBuffer({
+            size: destBuffer.size,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+          });
+          commandEncoder.copyBufferToBuffer(destBuffer, 0, resultBuffer, 0, destBuffer.size);
+
+          // Submit all command encoder operations
+          this.device.queue.submit([commandEncoder.finish()]);
+
+          // Read the result
+          await resultBuffer.mapAsync(GPUMapMode.READ);
+          const arrayBuffer = resultBuffer.getMappedRange();
+          const resultArray = new Float32Array(arrayBuffer.slice(0));
+          resultBuffer.unmap();
+          resultBuffer.destroy();
+          grads.set(output, resultArray);
+          console.log("RESULT ARRAY FOR KERNEL", resultArray);
+        }
+      }
     }
 
     // Get the final outpt
@@ -233,7 +282,10 @@ export class TensorGraph {
     resultBuffer.unmap();
     resultBuffer.destroy();
 
-    return resultArray;
+    return {
+      forward: resultArray,
+      gradients: grads,
+    };
   }
 
   destroy() {

@@ -7,8 +7,8 @@ export class Kernel {
   private inputBuffers: Map<string, GPUBuffer>;
   private outputBuffers: Map<string, GPUBuffer> = new Map();
   private intermediateBuffers: GPUBuffer[] = [];
-  private inputs: string[];
-  private outputs: string[];
+  inputs: string[];
+  outputs: string[];
   context?: Context<ASTNode>;
 
   constructor(
@@ -23,25 +23,64 @@ export class Kernel {
     this.inputs = inputs;
     this.outputs = outputs;
     this.inputBuffers = new Map(inputBuffers);
+
+    // Create the shader module
     const shaderModule = device.createShaderModule({
       code: kernelCode,
     });
 
+    // Create the bind group layout explicitly
+    const bindGroupLayoutEntries: GPUBindGroupLayoutEntry[] = [];
+
+    // Add input buffer layout entries
+    inputs.forEach((name, index) => {
+      bindGroupLayoutEntries.push({
+        binding: index,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "read-only-storage" },
+      });
+    });
+
+    // Add output buffer layout entries
+    outputs.forEach((name, index) => {
+      bindGroupLayoutEntries.push({
+        binding: inputs.length + index,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "storage" },
+      });
+    });
+
+    // Add intermediate buffer layout entries
+    intermediates.forEach((name, index) => {
+      bindGroupLayoutEntries.push({
+        binding: inputs.length + outputs.length + index,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "storage" },
+      });
+    });
+
+    // Create the bind group layout with all entries
+    const bindGroupLayout = device.createBindGroupLayout({
+      entries: bindGroupLayoutEntries,
+    });
+
+    // Create the compute pipeline with the explicitly created layout
     this.pipeline = device.createComputePipeline({
-      layout: "auto",
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout],
+      }),
       compute: {
         module: shaderModule,
         entryPoint: "main",
       },
     });
 
+    // Create bind group entries
     const entries: GPUBindGroupEntry[] = [];
 
-    console.log("KERNEL inputBuffers=", inputBuffers);
     // Add input bindings
     inputs.forEach((name, index) => {
       const buffer = this.inputBuffers.get(name);
-      console.log("buffer for name=%s", name, buffer);
       entries.push({
         binding: index,
         resource: { buffer: buffer! },
@@ -61,6 +100,7 @@ export class Kernel {
       });
     });
 
+    // Add intermediate buffer bindings
     intermediates.forEach((name, index) => {
       const buffer = device.createBuffer({
         size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
@@ -74,11 +114,13 @@ export class Kernel {
       });
     });
 
-    console.log("bindgroup entries", entries);
+    // Create the bind group with the explicitly created layout
     this.bindGroup = device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries,
     });
+
+    console.log("bindgroup entries", entries);
   }
 
   getInputBuffer(name: string): GPUBuffer | undefined {

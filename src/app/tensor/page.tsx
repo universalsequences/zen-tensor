@@ -24,6 +24,7 @@ const TensorPage: React.FC = () => {
   const [backwards, setBackwards] = useState<string[]>([]);
   const [epoch, setEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [grads, setGrads] = useState(new Map<string, Float32Array>());
 
   useEffect(() => {
     async function runTensorComputation() {
@@ -53,7 +54,7 @@ const TensorPage: React.FC = () => {
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
         //const result = g.output(log2(mult(c, add(a, mult(add(a, b), mult(c, d))))));
         //const result = g.output(mult(b, c));
-        const result = g.output(mult(b, add(a, c)));
+        const result = g.output(add(d, mult(a, add(b, c))));
 
         g.compile(result, [si]);
 
@@ -61,9 +62,10 @@ const TensorPage: React.FC = () => {
         setBackwards(g.backpasses);
 
         for (let i = 0; i < 1; i++) {
-          const r = await g.run();
-          a.set(r);
-          setResult(Array.from(r));
+          const { forward, gradients } = await g.run();
+          setGrads(gradients);
+          b.set(forward);
+          setResult(Array.from(forward));
           setEpoch(i);
           //await new Promise((resolve) => setTimeout(resolve, 1000));
         }
@@ -75,6 +77,12 @@ const TensorPage: React.FC = () => {
 
     runTensorComputation();
   }, []);
+
+  console.log("grads=", grads);
+  const _grads: { [x: string]: Float32Array } = {};
+  for (const k of grads.keys()) {
+    _grads[k] = grads.get(k);
+  }
 
   return (
     <div className="p-4">
@@ -106,6 +114,14 @@ const TensorPage: React.FC = () => {
                   {k}
                 </pre>
               ))}
+              <div className="bg-zinc-700 text-xs">
+                {Object.keys(_grads).map((name) => (
+                  <div>
+                    <div>{name}</div>
+                    {JSON.stringify(Array.from(_grads[name]))}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

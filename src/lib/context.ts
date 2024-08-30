@@ -15,7 +15,7 @@ import { BackwardContext } from "./back";
 
 let contextIdx = 1;
 
-const MAX_BUFFERS = 4;
+const MAX_BUFFERS = 1;
 
 export interface BaseContext<T> {
   code: string[];
