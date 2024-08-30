@@ -31,7 +31,8 @@ export interface ASTNode {
   type: DataType;
   shape: number[]; // [rows, cols] for 2D, [length] for 1D
   backprop?: (x: string) => string;
-gradientVariable: string; // New field for gradient variable
+  gradientVariable: string; // New field for gradient variable
+  parent?: ASTNode;
 }
 
 /**
@@ -48,3 +49,6 @@ export const toScalar = (data: ASTNode, type: DataType = DataType.Scalar, index?
   }
   return data.variable;
 };
+
+export const intermediate = (a: ASTNode) => intermediateVar(a.variable);
+export const intermediateVar = (a: string) => `${a}_intermediate`;

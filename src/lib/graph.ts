@@ -2,17 +2,18 @@ import { KernelContext, Context } from "./context";
 import { Kernel } from "./kernel";
 import { OpType, Arg, Gen, ASTNode, DataType, toScalar } from "./zen";
 import { Tensor } from "./input";
-import { backpass, generateBackwardPass } from "./back";
+import { backpass } from "./back";
 
 export class TensorGraph {
   device: GPUDevice;
-  private contexts: KernelContext[] = [];
+  private contexts: Context<ASTNode>[] = [];
   kernels: Kernel[] = [];
   private inputData: Map<string, Float32Array> = new Map();
   inputBuffers: Map<string, GPUBuffer> = new Map();
   private inputCounter: number = 0;
   outputSize: number = 0;
   outputShape: number[] = [1];
+  backpasses: string[] = [];
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -51,7 +52,7 @@ export class TensorGraph {
     this.outputSize = outputShape.reduce((a, b) => a * b, 1);
 
     this.contexts = [];
-    let currentContext = new KernelContext(OpType.Regular, this);
+    let currentContext: Context<ASTNode> = new KernelContext(OpType.Regular, this);
     // this.contexts.push(currentContext);
 
     const allContexts = new Set<Context<ASTNode>>();
@@ -75,7 +76,8 @@ export class TensorGraph {
     const result = graph(currentContext);
     traverse(result);
 
-    backpass(result);
+    this.backpasses = backpass(result.dependencies[0]).map((x) => x.code);
+    for (const bb of this.backpasses) console.log(bb);
 
     // brute force remaining contexts via dependencies...
     for (let i = 0; i < allContexts.size * 2; i++) {
@@ -88,6 +90,8 @@ export class TensorGraph {
       }
     }
 
+    console.log("CONTEXTS=", this.contexts);
+
     // Create input buffers
     this.inputData.forEach((data, name) => {
       const buffer = this.device.createBuffer({
@@ -99,9 +103,21 @@ export class TensorGraph {
     });
 
     // Create kernels
-    this.kernels = this.contexts.map(
-      (context) => new Kernel(this.device, context, this.inputBuffers, this.outputSize),
-    );
+    this.kernels = this.contexts.map((context) => {
+      const code = context.generateKernel();
+      context.kernelCode = code;
+      const k = new Kernel(
+        this.device,
+        code,
+        context.getInputs(),
+        context.getOutputs(),
+        context.intermediateOutputs,
+        this.inputBuffers,
+        this.outputSize,
+      );
+      k.context = context;
+      return k;
+    });
   }
 
   async run(): Promise<Float32Array> {
@@ -119,7 +135,7 @@ export class TensorGraph {
             if (prevOutputs.has(inputName + "_out")) {
               const sourceBuffer = prevOutputs.get(inputName + "_out")!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
-              await logBuffer(this.device, sourceBuffer, `Kernel ${i} input ${inputName}`);
+              // await logBuffer(this.device, sourceBuffer, `Kernel ${i} input ${inputName}`);
 
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
@@ -198,7 +214,7 @@ async function logBuffer(device: GPUDevice, buffer: GPUBuffer, label: string) {
   stagingBuffer.unmap();
 }
 
-const everyDependencyMet = (context: Context, contexts: Context[]) => {
+const everyDependencyMet = (context: Context<ASTNode>, contexts: Context<ASTNode>[]) => {
   for (const input of context.inputs.keys()) {
     if (input.includes("tensor")) {
       continue;

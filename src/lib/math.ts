@@ -1,5 +1,6 @@
-import { BackpropContext, BGen } from "./back";
-import { BaseContext, Context } from "./context";
+import { BGen } from "./back";
+import { intermediate } from "./zen";
+import { Context } from "./context";
 import { memo } from "./memo";
 import { OpType, ASTNode, Arg, DataType } from "./zen";
 import { toScalar } from "./zen";
@@ -48,52 +49,67 @@ function isScalar(shape: number[]): boolean {
   return shape.length === 1 && shape[0] === 1;
 }
 
+// TODO - each op should return a list of "inputs" needed by the kernel
+// for example, any intermediate values or input tensors
 const grad = (
+  op: string,
   node: ASTNode,
   gradOut: string,
   customLogic?: (dep: ASTNode, i: number) => string,
 ) => {
   let code = "";
   const visited = new Set<string>();
-  for (let i = 0; i < node.dependencies.length; i++) {
+  for (let i = node.dependencies.length - 1; i >= 0; i--) {
     const dep = node.dependencies[i];
-    if (visited.has(dep.variable)) continue;
-    visited.add(dep.variable);
+    if (visited.has(dep.gradientVariable)) continue;
+    visited.add(dep.gradientVariable);
 
-    // Use custom logic if provided, otherwise default to args[i]
-    const gradCode = customLogic ? customLogic(dep, i) : `let grad_${dep.variable} = ${gradOut};\n`;
+    // Use custom logic if provided, otherwise default to default gradient calculation
+    const gradCode = customLogic
+      ? customLogic(dep, i)
+      : `let ${dep.gradientVariable} += ${gradOut};\n`;
     code += gradCode;
   }
   return code;
 };
 
-// Handling operations with the updated grad function
-export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) => grad(node, gradOut));
+export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
+  grad("+", node, gradOut, (dep) => `${dep.gradientVariable} += ${gradOut};\n`),
+);
 
 export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>
   grad(
+    "-",
     node,
     gradOut,
-    (dep, i) => `let grad_${dep.variable} = ${i === 0 ? gradOut : `-${gradOut}`};\n`,
+    (dep, i) => `${dep.gradientVariable} += ${i === 0 ? gradOut : `-${gradOut}`};\n`,
   ),
 );
 
+export const v = (a: ASTNode) => (a.type === DataType.Tensor ? a.variable : intermediate(a));
+
 export const mult = binaryOp("mult", "*", (node: ASTNode, gradOut: string) => {
-  return grad(node, gradOut, (dep, i) => {
+  return grad("*", node, gradOut, (dep, i) => {
+    const otherDep = node.dependencies[1 - i];
     if (node.dependencies[0].variable === node.dependencies[1].variable) {
-      return `let grad_${dep.variable} = 2.0 * ${gradOut} * ${dep.variable};\n`;
+      // Handling the case where both dependencies are the same (e.g., b * b)
+      return `
+${dep.gradientVariable} += 2.0 * ${gradOut}*${v(otherDep)}
+`;
     } else {
-      return `let grad_${dep.variable} = ${gradOut} * ${node.dependencies[1 - i].variable};\n`;
+      return `${dep.gradientVariable} += ${gradOut} * ${v(otherDep)};\n`;
     }
   });
 });
 
 export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
-  grad(node, gradOut, (dep, i) => {
+  grad("/", node, gradOut, (dep, i) => {
     if (i === 0) {
-      return `let grad_${dep.variable} = ${gradOut} / ${node.dependencies[1].variable};\n`;
+      // Gradient for the first operand (dividend)
+      return `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])};\n`;
     } else {
-      return `let grad_${dep.variable} = -${gradOut} * ${node.variable} / ${dep.variable};\n`;
+      // Gradient for the second operand (divisor)
+      return `${dep.gradientVariable} += -${gradOut} * ${v(node.dependencies[0])} / (${v(dep)} * ${v(dep)});\n`;
     }
   }),
 );
@@ -234,7 +250,7 @@ let ${resultVar} = ${sum};
       let m = context.emit(resultVar, code, OpType.Reduction, outputShape, _a, _b);
       return m;
     },
-     (node: ASTNode, gradOut: string) => {
+    (node: ASTNode, gradOut: string) => {
       const gradA = `
       for (var k = 0u; k < ${shapeA[1]}u; k = k + 1u) {
         let a_idx = ${M} * k;

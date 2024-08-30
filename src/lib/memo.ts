@@ -13,16 +13,11 @@ export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
     const node = forward(context, ...args);
     node.backprop = (gradOut: string) => {
       let code = `
-        ${backward(node, gradOut)}
+${backward(node, gradOut)}
 `;
-      for (const dep of node.dependencies) {
-        code += `${dep.gradientVariable} += grad_${dep.variable};
-
-`;
-      }
       return code;
+    };
+    memoized = node;
+    return node;
   };
-  memoized = node;
-  return node;
 };
-}

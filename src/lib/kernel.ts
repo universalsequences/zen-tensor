@@ -1,23 +1,30 @@
-import { KernelContext } from "./context";
+import { Context } from "./context";
+import { ASTNode } from "./zen";
 
 export class Kernel {
-  context: KernelContext;
   private pipeline: GPUComputePipeline;
   private bindGroup: GPUBindGroup;
   private inputBuffers: Map<string, GPUBuffer>;
   private outputBuffers: Map<string, GPUBuffer> = new Map();
+  private intermediateBuffers: GPUBuffer[] = [];
+  private inputs: string[];
+  private outputs: string[];
+  context?: Context<ASTNode>;
 
   constructor(
     private device: GPUDevice,
-    context: KernelContext,
+    kernelCode: string,
+    inputs: string[],
+    outputs: string[],
+    intermediates: string[],
     inputBuffers: Map<string, GPUBuffer>,
     size: number,
   ) {
-    this.context = context;
+    this.inputs = inputs;
+    this.outputs = outputs;
     this.inputBuffers = new Map(inputBuffers);
-    this.context.kernelCode = context.generateKernel();
     const shaderModule = device.createShaderModule({
-      code: this.context.kernelCode,
+      code: kernelCode,
     });
 
     this.pipeline = device.createComputePipeline({
@@ -31,7 +38,7 @@ export class Kernel {
     const entries: GPUBindGroupEntry[] = [];
 
     // Add input bindings
-    context.getInputs().forEach((name, index) => {
+    inputs.forEach((name, index) => {
       entries.push({
         binding: index,
         resource: { buffer: this.inputBuffers.get(name)! },
@@ -39,7 +46,6 @@ export class Kernel {
     });
 
     // Create output buffers and add bindings
-    const outputs = context.getOutputs();
     outputs.forEach((name, index) => {
       const buffer = device.createBuffer({
         size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
@@ -47,7 +53,20 @@ export class Kernel {
       });
       this.outputBuffers.set(name, buffer);
       entries.push({
-        binding: context.getInputs().length + index,
+        binding: inputs.length + index,
+        resource: { buffer },
+      });
+    });
+
+    intermediates.forEach((name, index) => {
+      const buffer = device.createBuffer({
+        size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      });
+      this.outputBuffers.set(name, buffer);
+      this.intermediateBuffers.push(buffer);
+      entries.push({
+        binding: inputs.length + outputs.length + index,
         resource: { buffer },
       });
     });
@@ -84,19 +103,19 @@ export class Kernel {
     return this.outputBuffers;
   }
 
-  updateTensorBuffer(name: string, buffer: GPUBuffer) {
+  updateInputBuffer(name: string, buffer: GPUBuffer) {
     this.inputBuffers.set(name, buffer);
     // Recreate bind group with updated input buffer
     const entries: GPUBindGroupEntry[] = [];
-    this.context.getInputs().forEach((inputName, index) => {
+    this.inputs.forEach((inputName, index) => {
       entries.push({
         binding: index,
         resource: { buffer: this.inputBuffers.get(inputName)! },
       });
     });
-    this.context.getOutputs().forEach((outputName, index) => {
+    this.outputs.forEach((outputName, index) => {
       entries.push({
-        binding: this.context.getInputs().length + index,
+        binding: this.inputs.length + index,
         resource: { buffer: this.outputBuffers.get(outputName)! },
       });
     });

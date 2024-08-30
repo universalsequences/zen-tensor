@@ -1,6 +1,17 @@
-import { ASTNode, Arg, OpType, Gen, DataType, toScalar } from "./zen";
+import {
+  ASTNode,
+  Arg,
+  OpType,
+  Gen,
+  DataType,
+  toScalar,
+  intermediate,
+  intermediateVar,
+} from "./zen";
 import { Tensor } from "./input";
 import { TensorGraph } from "./graph";
+import { constructGroup } from "./utils";
+import { BackwardContext } from "./back";
 
 let contextIdx = 1;
 
@@ -18,7 +29,9 @@ export interface BaseContext<T> {
 }
 
 export type Context<T> = BaseContext<T> & {
+  backward?: BackwardContext;
   useContext: (opType: OpType) => Context<T>;
+  usedVariables: string[];
   kernelCode?: string;
   id: number;
   children: Context<T>[];
@@ -30,9 +43,13 @@ export type Context<T> = BaseContext<T> & {
   idx: number;
   outputs: Map<string, number>;
   generateKernel: () => string;
+  intermediateOutputs: string[];
+  getInputs: () => string[];
+  getOutputs: () => string[];
 };
 
 const visited = new Map<string, ASTNode>();
+
 /**
  * A KernelContext collects operations that may be run on the same kernel
  * Using this, it generates code for the
@@ -48,6 +65,9 @@ export class KernelContext implements Context<ASTNode> {
   tensorGraph: TensorGraph;
   children: Context<ASTNode>[] = [];
   idx = 0;
+  usedVariables: string[] = [];
+  intermediateOutputs: string[] = [];
+  backwardContext?: BackwardContext;
 
   constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context<ASTNode>) {
     this.opType = opType;
@@ -62,6 +82,7 @@ export class KernelContext implements Context<ASTNode> {
   gen(x: Arg, force?: boolean): ASTNode {
     if (typeof x === "number") {
       return {
+        gradientVariable: "0",
         dependencies: [],
         context: this,
         opType: OpType.Regular,
@@ -81,6 +102,8 @@ export class KernelContext implements Context<ASTNode> {
     }
 
     const result = (x as Gen)(this);
+
+    // TODO - can we place this in the context?
     const memoized = visited.get(result.variable);
     if (memoized) {
       this.addInput(memoized.variable);
@@ -112,7 +135,7 @@ export class KernelContext implements Context<ASTNode> {
         shape: result.shape,
         code: code,
         type: DataType.Tensor,
-        gradientVariable: result.gradientVariable
+        gradientVariable: result.gradientVariable,
       };
       visited.set(result.variable, x);
       return x;
@@ -122,7 +145,9 @@ export class KernelContext implements Context<ASTNode> {
 
   useVariables(...names: string[]) {
     this.idx++;
-    return names.map((n) => `${n}${this.idx}`);
+    const variables = names.map((n) => `${n}${this.idx}`);
+    this.usedVariables.push(...variables);
+    return variables;
   }
 
   emit(
@@ -133,7 +158,7 @@ export class KernelContext implements Context<ASTNode> {
     ...dependencies: ASTNode[]
   ): ASTNode {
     const [gradientVariable] = this.useVariables(`grad_${variable}`);
-    return {
+    let astNode = {
       context: this,
       gradientVariable,
       variable,
@@ -143,6 +168,10 @@ export class KernelContext implements Context<ASTNode> {
       opType,
       type: DataType.Scalar,
     };
+    for (const dep of dependencies) {
+      dep.parent = astNode;
+    }
+    return astNode;
   }
 
   useContext(opType: OpType): Context<ASTNode> {
@@ -172,19 +201,49 @@ export class KernelContext implements Context<ASTNode> {
     }
   }
 
-  generateKernel(): string {
+  generateKernel(useIntermediates = true): string {
     const inputBindings = Array.from(this.inputs.entries())
+      .map(([name, index]) => constructGroup(index, "read", name))
+      .join("\n");
+
+    let outputBindings = Array.from(this.outputs.entries())
+      .map(([name, index]) => constructGroup(this.inputs.size + index, "read_write", name))
+      .join("\n");
+
+    const code = this.code
+      .filter((x) => x !== "")
+      .flatMap((c) => c.split("\n"))
+      .map((x) => "        " + x)
+      .join("\n");
+
+    const intermediates = !useIntermediates
+      ? []
+      : this.usedVariables.filter((x) => !x.includes("output") && code.includes(x)); // TODO - use something less hacky
+
+    const intermediateValues = intermediates
       .map(
-        ([name, index]) => `@group(0) @binding(${index}) var<storage, read> ${name}: array<f32>;`,
+        (intermediateValue) =>
+          `        ${intermediateVar(intermediateValue)}[index] = ${intermediateValue};`,
       )
       .join("\n");
 
-    const outputBindings = Array.from(this.outputs.entries())
-      .map(
-        ([name, index]) =>
-          `@group(0) @binding(${this.inputs.size + index}) var<storage, read_write> ${name}: array<f32>;`,
-      )
-      .join("\n");
+    if (useIntermediates) {
+      let i = 0;
+      for (const inter of intermediates) {
+        outputBindings +=
+          "\n" +
+          constructGroup(
+            this.outputs.size + this.inputs.size + i,
+            "read_write",
+            intermediateVar(inter),
+          ) +
+          "\n";
+
+        i++;
+      }
+
+      this.intermediateOutputs = intermediates;
+    }
 
     return `
 ${inputBindings}
@@ -193,11 +252,10 @@ ${outputBindings}
       @compute @workgroup_size(64)
       fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let index = global_id.x;
-${this.code
-  .filter((x) => x !== "")
-  .flatMap((c) => c.split("\n"))
-  .map((x) => "        " + x)
-  .join("\n")}
+${code}
+
+        // intermediate values
+${intermediateValues}
       }
     `;
   }
