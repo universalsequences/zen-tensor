@@ -8,7 +8,8 @@ export class TensorGraph {
   device: GPUDevice;
   private contexts: Context<ASTNode>[] = [];
   kernels: Kernel[] = [];
-  private inputData: Map<string, Float32Array> = new Map();
+  backKernels: Kernel[] = [];
+  inputData: Map<string, Float32Array> = new Map();
   inputBuffers: Map<string, GPUBuffer> = new Map();
   private inputCounter: number = 0;
   outputSize: number = 0;
@@ -92,6 +93,12 @@ export class TensorGraph {
 
     console.log("CONTEXTS=", this.contexts);
 
+    console.log("input data = ", this.inputData);
+
+    for (const c of this.contexts) {
+      c.evalLazyInputs();
+    }
+
     // Create input buffers
     this.inputData.forEach((data, name) => {
       const buffer = this.device.createBuffer({
@@ -118,6 +125,46 @@ export class TensorGraph {
       k.context = context;
       return k;
     });
+
+    for (const context of this.contexts) {
+      const backward = context.backward;
+      if (!backward) continue;
+      for (const inp of backward.inputs) {
+        if (!this.inputBuffers.has(inp)) {
+          const data = new Float32Array(this.outputSize);
+          this.inputData.set(inp, data);
+          context.addInput(inp);
+          console.log("adding input", inp);
+          const buffer = this.device.createBuffer({
+            size: data.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+          });
+          this.device.queue.writeBuffer(buffer, 0, data);
+          this.inputBuffers.set(inp, buffer);
+        }
+      }
+    }
+
+    // Create kernels
+    for (const context of this.contexts) {
+      const backward = context.backward;
+      if (!backward) continue;
+
+      console.log("backward inputs", backward.inputs);
+      console.log("backward outputs", backward.outputs);
+      console.log(this.inputData);
+      console.log(this.inputBuffers);
+      const k = new Kernel(
+        this.device,
+        backward.code,
+        backward.inputs,
+        backward.outputs,
+        [],
+        this.inputBuffers,
+        this.outputSize,
+      );
+      this.backKernels.push(k);
+    }
   }
 
   async run(): Promise<Float32Array> {

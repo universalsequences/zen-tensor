@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useEffect, useState, useRef } from "react";
 
 // Import your TensorGraph class and other necessary types
@@ -52,9 +51,9 @@ const TensorPage: React.FC = () => {
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
-        const result = g.output(add(a, mult(add(a, b), mult(c, d))));
+        //const result = g.output(log2(mult(c, add(a, mult(add(a, b), mult(c, d))))));
         //const result = g.output(mult(b, c));
-        //const result = g.output(mult(b, add(a, c)));
+        const result = g.output(mult(b, add(a, c)));
 
         g.compile(result, [si]);
 
@@ -91,7 +90,9 @@ const TensorPage: React.FC = () => {
           </pre>
           <div className="flex">
             <div className="mt-2">
-              <p className="text-center text-zinc-400">forwards</p>
+              <div className="text-center text-zinc-400">
+                <div>forwards</div>
+              </div>
               {kernels.map((k, i) => (
                 <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-10">
                   {k}

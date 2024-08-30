@@ -15,6 +15,8 @@ import { BackwardContext } from "./back";
 
 let contextIdx = 1;
 
+const MAX_BUFFERS = 4;
+
 export interface BaseContext<T> {
   code: string[];
   opType: OpType;
@@ -46,6 +48,8 @@ export type Context<T> = BaseContext<T> & {
   intermediateOutputs: string[];
   getInputs: () => string[];
   getOutputs: () => string[];
+  lazyInputs: string[];
+  evalLazyInputs: () => void;
 };
 
 const visited = new Map<string, ASTNode>();
@@ -68,6 +72,7 @@ export class KernelContext implements Context<ASTNode> {
   usedVariables: string[] = [];
   intermediateOutputs: string[] = [];
   backwardContext?: BackwardContext;
+  lazyInputs: string[] = [];
 
   constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context<ASTNode>) {
     this.opType = opType;
@@ -81,8 +86,8 @@ export class KernelContext implements Context<ASTNode> {
 
   gen(x: Arg, force?: boolean): ASTNode {
     if (typeof x === "number") {
+      // todo need a number op to be used here...
       return {
-        gradientVariable: "0",
         dependencies: [],
         context: this,
         opType: OpType.Regular,
@@ -112,6 +117,13 @@ export class KernelContext implements Context<ASTNode> {
 
     if (result.opType === OpType.Reshape) {
       return result;
+    }
+
+    if (!this.usedVariables.includes(result.variable)) {
+      console.log("YOOOO USED VAR NOT HAVE", result.variable, result);
+      this.lazyInputs.push(result.variable);
+      result.variable += "_intermediate";
+      result.type = DataType.Tensor;
     }
 
     if (result.opType !== this.opType || result.opType === OpType.Reduction) {
@@ -157,7 +169,7 @@ export class KernelContext implements Context<ASTNode> {
     shape: number[],
     ...dependencies: ASTNode[]
   ): ASTNode {
-    const [gradientVariable] = this.useVariables(`grad_${variable}`);
+    const gradientVariable = `grad_${variable}`;
     let astNode = {
       context: this,
       gradientVariable,
@@ -175,6 +187,9 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   useContext(opType: OpType): Context<ASTNode> {
+    if (this.usedVariables.length + this.inputs.size + this.outputs.size > MAX_BUFFERS) {
+      return new KernelContext(opType, this.tensorGraph, this);
+    }
     if (this.opType !== opType || opType === OpType.Reduction) {
       const childrenOfParentWithType =
         this.parentContext?.children.filter((x) => x.opType === opType) || [];
@@ -262,6 +277,15 @@ ${intermediateValues}
 
   getInputs(): string[] {
     return Array.from(this.inputs.keys());
+  }
+
+  evalLazyInputs() {
+    console.log("LAZY INPUTS=", this.lazyInputs);
+    for (const ii of this.lazyInputs) {
+      const inp = ii + "_intermediate";
+      this.tensorGraph.inputData.set(inp, new Float32Array(this.tensorGraph.outputSize));
+      this.addInput(inp);
+    }
   }
 
   getOutputs(): string[] {

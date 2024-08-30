@@ -37,11 +37,14 @@ export class Kernel {
 
     const entries: GPUBindGroupEntry[] = [];
 
+    console.log("KERNEL inputBuffers=", inputBuffers);
     // Add input bindings
     inputs.forEach((name, index) => {
+      const buffer = this.inputBuffers.get(name);
+      console.log("buffer for name=%s", name, buffer);
       entries.push({
         binding: index,
-        resource: { buffer: this.inputBuffers.get(name)! },
+        resource: { buffer: buffer! },
       });
     });
 
@@ -71,6 +74,7 @@ export class Kernel {
       });
     });
 
+    console.log("bindgroup entries", entries);
     this.bindGroup = device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(0),
       entries,

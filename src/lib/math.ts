@@ -9,6 +9,8 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
   memo(
     (context: Context<ASTNode>): ASTNode => {
       context = context.useContext(OpType.Regular);
+      const [variableName] = context.useVariables(`${name}_result`);
+
       const _x = context.gen(x);
       const _y = context.gen(y);
 
@@ -25,8 +27,6 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
       } else {
         throw new Error(`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`);
       }
-
-      const [variableName] = context.useVariables(`${name}_result`);
 
       let code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
       return context.emit(variableName, code, OpType.Regular, outputShape, _x, _y);
@@ -86,7 +86,7 @@ export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>
   ),
 );
 
-export const v = (a: ASTNode) => (a.type === DataType.Tensor ? a.variable : intermediate(a));
+export const v = (a: ASTNode) => (a.type === DataType.Tensor ? toScalar(a) : `${intermediate(a)}[index]`);
 
 export const mult = binaryOp("mult", "*", (node: ASTNode, gradOut: string) => {
   return grad("*", node, gradOut, (dep, i) => {
