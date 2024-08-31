@@ -63,10 +63,11 @@ const TensorPage: React.FC = () => {
         const c = g.tensor([si], "c").fill(1);
         const net = mult(a, b);
         */
-        const a = g.tensor([si], "a").fill(0.8);
-        const c = g.tensor([si], "c").fill(0.5);
+        const a = g.tensor([si], "a").fill(0.2);
+        const b = g.tensor([si], "c").fill(0.8);
+        const c = g.tensor([si], "c").fill(0.9);
         //const net = add(1, a); // Simply use a single variable
-        const result = g.output(binaryCrossEntropy(a, c));
+        const result = g.output(binaryCrossEntropy(mult(a, b), c));
         g.compile(result, [si]);
         setComputation("binaryCrossEntropy(add(0, a), c))");
 
@@ -80,10 +81,10 @@ const TensorPage: React.FC = () => {
           setResult(Array.from(forward));
           setEpoch(i);
           a.learn(0.001);
-          //b.learn(0.01);
+          b.learn(0.01);
           const map = new Map<string, Float32Array>();
           map.set("a", a.val());
-          //map.set("b", b.val());
+          map.set("b", b.val());
           setTensors(map);
         }
       } catch (err) {

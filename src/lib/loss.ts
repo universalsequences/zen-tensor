@@ -65,27 +65,38 @@ export const binaryCrossEntropy = (predicted: Arg, actual: Arg) =>
       return context.emit(res, code, OpType.Regular, _predicted.shape, _predicted, _actual);
     },
     (node: ASTNode, gradOut: string) => {
-      const predictedVar = node.dependencies[0].variable; // Forward pass predicted output
-  const actualVar = node.dependencies[1].variable; // Forward pass actual label
+      const predictedVar = node.dependencies[0].variable; // Variable for predicted output from forward pass
+      const actualVar = node.dependencies[1].variable; // Variable for actual labels from forward pass
 
-  // Clamping predicted values to avoid issues with log(0)
-  const clampedPredictedVar = `clamp(${predictedVar}[index], ${epsilon}, 1.0 - ${epsilon})`;
+      const clampedPredictedVar = `clamp(${predictedVar}[index], 1e-7, 1.0 - 1e-7)`;
 
-  // Gradient with respect to the predicted variable (predicted output)
-  const gradPredictedCode = `
-    ${node.dependencies[0].gradientVariable} += (${clampedPredictedVar} - ${v(node.dependencies[1])}) / (${clampedPredictedVar} * (1.0 - ${clampedPredictedVar}));
+      // Gradient with respect to the predicted output
+      const gradPredictedCode = `
+    ${node.gradientVariable} = (${clampedPredictedVar} - ${v(node.dependencies[1])}) /
+    (${clampedPredictedVar} * (1.0 - ${clampedPredictedVar}));
   `;
 
-  // Since the gradient with respect to the actual value (actualVar) is usually not needed, we don't include it.
-  // If you need it for some reason, you can add it here.
+      // Gradient with respect to the actual labels (usually not used, but included for completeness)
+      const gradActualCode = `
+    ${node.dependencies[1].gradientVariable} +=
+    -${v(node.dependencies[1])} / ${clampedPredictedVar} +
+    (1.0 - ${v(node.dependencies[1])}) / (1.0 - ${clampedPredictedVar});
+  `;
 
-  return {
-    code: gradPredictedCode,
-    intermediateVariables: [
-      trimIndex(v(node.dependencies[0])),
-      trimIndex(v(node.dependencies[1])),
-    ],
-  };
+      // Combine both gradient codes into a single code block
+      const code = `
+    ${gradPredictedCode}
+    ${gradActualCode}
+  `;
+
+      // Return the generated code and any intermediate variables needed for further operations
+      return {
+        code: code.trim(),
+        intermediateVariables: [
+          trimIndex(v(node.dependencies[0])),
+          trimIndex(v(node.dependencies[1])),
+        ],
+      };
     },
     predicted,
     actual,
