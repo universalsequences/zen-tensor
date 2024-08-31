@@ -49,10 +49,7 @@ function isScalar(shape: number[]): boolean {
   return shape.length === 1 && shape[0] === 1;
 }
 
-// TODO - each op should return a list of "inputs" needed by the kernel
-// for example, any intermediate values or input tensors
 const grad = (
-  op: string,
   node: ASTNode,
   gradOut: string,
   customLogic?: (
@@ -86,6 +83,7 @@ const grad = (
   };
 };
 
+// removes the [index] from a string
 export const trimIndex = (x: string) => {
   if (x.includes("[index]")) {
     return x.slice(0, x.length - "[index]".length);
@@ -94,14 +92,14 @@ export const trimIndex = (x: string) => {
 };
 
 export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
-  grad("+", node, gradOut, (dep) => ({
+  grad(node, gradOut, (dep) => ({
     code: `${dep.gradientVariable} += ${gradOut};\n`,
     intermediateVariables: [gradOut],
   })),
 );
 
 export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>
-  grad("-", node, gradOut, (dep, i) => ({
+  grad(node, gradOut, (dep, i) => ({
     code: `${dep.gradientVariable} += ${i === 0 ? gradOut : `-${gradOut}`};\n`,
   })),
 );
@@ -110,7 +108,7 @@ export const v = (a: ASTNode) =>
   a.type === DataType.Tensor ? toScalar(a) : `${intermediate(a)}[index]`;
 
 export const mult = binaryOp("mult", "*", (node: ASTNode, gradOut: string) => {
-  return grad("*", node, gradOut, (dep, i) => {
+  return grad(node, gradOut, (dep, i) => {
     const otherDep = node.dependencies[1 - i];
     if (node.dependencies[0].variable === node.dependencies[1].variable) {
       // Handling the case where both dependencies are the same (e.g., b * b)
@@ -132,7 +130,7 @@ ${dep.gradientVariable} += 2.0 * ${gradOut}*${v(otherDep)}
 });
 
 export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
-  grad("/", node, gradOut, (dep, i) => {
+  grad(node, gradOut, (dep, i) => {
     if (i === 0) {
       // Gradient for the first operand (dividend)
       const code = `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])};\n`;
@@ -294,7 +292,8 @@ let ${resultVar} = ${sum};
       let m = context.emit(resultVar, code, OpType.Reduction, outputShape, _a, _b);
       return m;
     },
-    (node: ASTNode, gradOut: string) => {
+    (_node: ASTNode, _gradOut: string) => {
+      /*
       const gradA = `
       for (var k = 0u; k < ${shapeA[1]}u; k = k + 1u) {
         let a_idx = ${M} * k;
@@ -308,6 +307,11 @@ let ${resultVar} = ${sum};
       }`;
 
       return gradA + gradB;
+      */
+      return {
+        code: "",
+        intermediateVariables: [],
+      };
     },
     a,
     b,

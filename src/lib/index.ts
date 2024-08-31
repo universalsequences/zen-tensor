@@ -6,3 +6,5 @@ export * from "./input";
 export * from "./math";
 export * from "./dot";
 export * from "./reshape";
+export * from "./activations";
+export * from "./loss";

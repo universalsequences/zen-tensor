@@ -10,6 +10,7 @@ export class TensorGraph {
   kernels: Kernel[] = [];
   backKernels: Kernel[] = [];
   inputData: Map<string, Float32Array> = new Map();
+  gradientData: Map<string, Float32Array> = new Map();
   inputBuffers: Map<string, GPUBuffer> = new Map();
   private inputCounter: number = 0;
   outputSize: number = 0;
@@ -188,6 +189,8 @@ export class TensorGraph {
                 0,
                 this.outputSize * Float32Array.BYTES_PER_ELEMENT,
               );
+              const r = await logBuffer(this.device, sourceBuffer);
+              console.log("RESULT=", inputName, r);
             }
             if (prevOutputs.has(inputName)) {
               const sourceBuffer = prevOutputs.get(inputName)!;
@@ -200,8 +203,8 @@ export class TensorGraph {
                 0,
                 this.outputSize * Float32Array.BYTES_PER_ELEMENT,
               );
-              //const r = await logBuffer(this.device, sourceBuffer);
-              //console.log("RESULT=", r);
+              const r = await logBuffer(this.device, sourceBuffer);
+              console.log("RESULT=", inputName, r);
             }
           }
         }
@@ -273,9 +276,19 @@ export class TensorGraph {
     await resultBuffer.mapAsync(GPUMapMode.READ);
     const arrayBuffer = resultBuffer.getMappedRange();
     const resultArray = new Float32Array(arrayBuffer.slice(0));
+    console.log("final buffer=", Array.from(resultArray), resultArray);
     resultBuffer.unmap();
     resultBuffer.destroy();
 
+    console.log("grad=", grads);
+    for (const grad of grads.keys()) {
+      const regex = /^grad_(.+?)_output$/;
+      const match = grad.match(regex);
+      if (match) {
+        const extractedPart = match[1];
+        this.gradientData.set(extractedPart, grads.get(grad)!);
+      }
+    }
     return {
       forward: resultArray,
       gradients: grads,

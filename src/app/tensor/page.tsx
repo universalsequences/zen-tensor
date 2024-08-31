@@ -7,6 +7,7 @@ import "prismjs/components/prism-wgsl"; // Import the specific language syntax
 
 // Import your TensorGraph class and other necessary types
 import {
+  relu,
   TensorGraph,
   log2,
   dot,
@@ -20,6 +21,7 @@ import {
   sine,
   sum,
   div,
+  binaryCrossEntropy,
 } from "@/lib/index"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
@@ -30,6 +32,7 @@ const TensorPage: React.FC = () => {
   const [epoch, setEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [grads, setGrads] = useState(new Map<string, Float32Array>());
+  const [tensors, setTensors] = useState(new Map<string, Float32Array>());
   const [computation, setComputation] = useState("");
 
   useEffect(() => {
@@ -54,41 +57,34 @@ const TensorPage: React.FC = () => {
         const g = new TensorGraph(device);
         const si = 3 * 3;
 
+        /*
         const a = g.tensor([si], "a").fill(1);
         const b = g.tensor([si], "b").fill(1);
         const c = g.tensor([si], "c").fill(1);
-        const d = g.tensor([si], "d").ones();
-        const e = g.tensor([si], "e").fill(1.0 / 15.0);
-        const dim = [Math.sqrt(si), Math.sqrt(si)];
-        const m = matmul(reshape(b, dim), reshape(a, dim));
-        //const result = g.output(add(a, mult(c, sum(add(d, b)))));
-        //const result = g.output(log2(mult(c, add(a, mult(add(a, b), mult(c, d))))));
-        //const result = g.output(mult(b, c));
-        //const result = g.output(sum(div(e, add(d, mult(a, add(b, c))))));
-        //const result = g.output(add(40, mult(e, mult(e, add(a, add(c, b))))));
-        //const result = g.output(add(100, sum(add(3, mult(5, add(a, b))))));
-        //const result = g.output(mult(2, sum(add(3, b))));
-        const result = g.output(mult(e, mean(mult(add(a, b), c))));
-        //const result = g.output(mult(e, sum(add(d, add(a, mult(b, c))))));
-        //const result = g.output(mult(e, 4));
-        setComputation("mult(e, sum(mult(add(a, b), b))))");
-
+        const net = mult(a, b);
+        */
+        const a = g.tensor([si], "a").fill(0.8);
+        const c = g.tensor([si], "c").fill(0.5);
+        //const net = add(1, a); // Simply use a single variable
+        const result = g.output(binaryCrossEntropy(a, c));
         g.compile(result, [si]);
+        setComputation("binaryCrossEntropy(add(0, a), c))");
 
+        // update ui
         setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
         setBackwards(g.backpasses);
 
-        for (let i = 0; i < 1; i++) {
+        for (let i = 0; i < 10000; i++) {
           const { forward, gradients } = await g.run();
           setGrads(gradients);
-          if (i % 2 == 0) {
-            b.set(forward);
-          } else {
-            a.set(forward);
-          }
           setResult(Array.from(forward));
           setEpoch(i);
-          //await new Promise((resolve) => setTimeout(resolve, 100));
+          a.learn(0.001);
+          //b.learn(0.01);
+          const map = new Map<string, Float32Array>();
+          map.set("a", a.val());
+          //map.set("b", b.val());
+          setTensors(map);
         }
       } catch (err) {
         console.log(err);
@@ -101,7 +97,12 @@ const TensorPage: React.FC = () => {
 
   const _grads: { [x: string]: Float32Array } = {};
   for (const k of grads.keys()) {
-    _grads[k] = grads.get(k);
+    _grads[k] = grads.get(k)!;
+  }
+
+  const _tensors: { [x: string]: Float32Array } = {};
+  for (const k of tensors.keys()) {
+    _tensors[k] = tensors.get(k)!;
   }
 
   return (
@@ -121,8 +122,16 @@ const TensorPage: React.FC = () => {
             </div>
           </div>
           <div className="flex gap-5 h-64">
-            <div className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative  overflow-scroll">
+            <div className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative  overflow-scroll text-xs">
               {JSON.stringify(result, null, 2)}
+              {Object.keys(_tensors).map((name) => (
+                <div>
+                  <div className="text-purple-500">{name}</div>
+                  <div className="text-wrap">
+                    {JSON.stringify(Array.from(_tensors[name]), null, 4)}
+                  </div>
+                </div>
+              ))}
 
               <div className="absolute bottom-1 right-2 text-purple-500 text-xs">
                 forward output epoch: {epoch}

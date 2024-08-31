@@ -23,6 +23,25 @@ export class Tensor {
     return this;
   }
 
+  grad() {
+    return this.graph.gradientData.get(this.name)!;
+  }
+
+  val() {
+    return this.graph.inputData.get(this.name)!;
+  }
+
+  learn(learningRate: number) {
+    const grad = this.grad();
+    const val = this.val();
+
+    const result = new Float32Array(val.length);
+    for (let i = 0; i < result.length; i++) {
+      result[i] = val[i] - learningRate * grad[i];
+    }
+    this.set(result);
+  }
+
   fill(value: number) {
     const size = this.shape.reduce((a, b) => a * b, 1);
     return this.set(new Array(size).fill(value));
