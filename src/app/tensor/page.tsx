@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState, useRef } from "react";
+import { ArrowRightIcon, ArrowLeftIcon } from "@radix-ui/react-icons";
 import Prism from "prismjs";
 import "prismjs/themes/prism-okaidia.css"; // Import the PrismJS theme
 import "prismjs/components/prism-wgsl"; // Import the specific language syntax
@@ -53,11 +54,11 @@ const TensorPage: React.FC = () => {
         const g = new TensorGraph(device);
         const si = 3 * 3;
 
-        const a = g.tensor([si]).fill(3);
-        const b = g.tensor([si]).ones();
-        const c = g.tensor([si]).ones();
-        const d = g.tensor([si]).ones();
-        const e = g.tensor([si]).fill(1);
+        const a = g.tensor([si], "a").fill(1);
+        const b = g.tensor([si], "b").fill(1);
+        const c = g.tensor([si], "c").fill(1);
+        const d = g.tensor([si], "d").ones();
+        const e = g.tensor([si], "e").fill(1.0 / 15.0);
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
@@ -67,10 +68,10 @@ const TensorPage: React.FC = () => {
         //const result = g.output(add(40, mult(e, mult(e, add(a, add(c, b))))));
         //const result = g.output(add(100, sum(add(3, mult(5, add(a, b))))));
         //const result = g.output(mult(2, sum(add(3, b))));
-        const result = g.output(sum(mult(add(a, c), b)));
+        const result = g.output(mult(e, mean(mult(add(a, b), c))));
         //const result = g.output(mult(e, sum(add(d, add(a, mult(b, c))))));
         //const result = g.output(mult(e, 4));
-        setComputation("mult(e, sum(add(d, add(a, mult(b, c))))))");
+        setComputation("mult(e, sum(mult(add(a, b), b))))");
 
         g.compile(result, [si]);
 
@@ -80,10 +81,14 @@ const TensorPage: React.FC = () => {
         for (let i = 0; i < 1; i++) {
           const { forward, gradients } = await g.run();
           setGrads(gradients);
-          //b.set(forward);
+          if (i % 2 == 0) {
+            b.set(forward);
+          } else {
+            a.set(forward);
+          }
           setResult(Array.from(forward));
           setEpoch(i);
-          //await new Promise((resolve) => setTimeout(resolve, 1000));
+          //await new Promise((resolve) => setTimeout(resolve, 100));
         }
       } catch (err) {
         console.log(err);
@@ -137,8 +142,9 @@ const TensorPage: React.FC = () => {
           </div>
           <div className="flex pt-5 border-t-zinc-800  gap-5">
             <div className="mt-2">
-              <div className="text-center text-zinc-400">
-                <div className="text-purple-500">forwards</div>
+              <div className="text-center text-purple-500 flex flex-col mx-auto w-32">
+                <div>forward</div>
+                <ArrowRightIcon className="my-auto mx-auto" />
               </div>
               {kernels.map((code, i) => (
                 <pre
@@ -153,7 +159,10 @@ const TensorPage: React.FC = () => {
               ))}
             </div>
             <div className="mt-2">
-              <p className="text-center text-purple-500">backwards</p>
+              <div className="text-center text-purple-500 flex flex-col mx-auto w-32">
+                <div>backwards</div>
+                <ArrowLeftIcon className="my-auto mx-auto" />
+              </div>
               {backwards.map((code, i) => (
                 <pre
                   style={{ backgroundColor: "#18181b" }}

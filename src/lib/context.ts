@@ -85,6 +85,7 @@ export class KernelContext implements Context<ASTNode> {
     }
     return childs;
   }
+
   gen(x: Arg, force?: boolean): ASTNode {
     if (typeof x === "number") {
       return numberOp(x)(this);
@@ -120,42 +121,10 @@ export class KernelContext implements Context<ASTNode> {
     ) {
       // this tells us that this variable actually exists in a previous context as an intermediate value
       this.lazyInputs.push(result.variable);
-      //if (result.opType !== this.opType || result.opType === OpType.Reduction) {
-      //} else {
       result.variable += "_intermediate";
       result.type = DataType.Tensor;
-      // }
     }
 
-    return result;
-    if (result.opType !== this.opType || result.opType === OpType.Reduction) {
-      // We're crossing context boundaries
-      const outputName = `cross_context_output_${this.id}_${this.idx++}`;
-      this.addInput(outputName);
-      const buffer = this.tensorGraph.device.createBuffer({
-        size: this.tensorGraph.outputSize * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      this.tensorGraph.inputBuffers.set(outputName, buffer);
-
-      const out = `${outputName}_out`;
-      result.context.addOutput(out);
-      const code = `${out}[index] = ${toScalar(result)};`;
-      if (result.variable.includes("reduce")) {
-      }
-      let x = {
-        context: result.context,
-        dependencies: [result],
-        opType: result.opType,
-        variable: `${outputName}`,
-        shape: result.shape,
-        code: code,
-        type: DataType.Tensor,
-        gradientVariable: result.gradientVariable,
-      };
-      visited.set(result.variable, x);
-      return x;
-    }
     return result;
   }
 
@@ -195,14 +164,8 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   useContext(opType: OpType): Context<ASTNode> {
-    console.log(
-      "use context called with useVariables.length=",
-      this.usedVariables.length,
-      this.inputs.size,
-      this.outputs.size,
-      this.lazyInputs.length,
-    );
     if (2 * this.usedVariables.length + this.inputs.size + this.outputs.size >= MAX_BUFFERS) {
+      // we need to ensure that this does not create a backward pass kernel with over 8 buffers
       return new KernelContext(opType, this.tensorGraph, this);
     }
     if (this.opType !== opType || opType === OpType.Reduction) {

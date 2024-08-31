@@ -20,8 +20,8 @@ export class TensorGraph {
     this.device = device;
   }
 
-  tensor(shape: number[]): Tensor {
-    const tensorName = `tensor_${this.inputCounter++}`;
+  tensor(shape: number[], name = ""): Tensor {
+    const tensorName = `tensor_${name}_${this.inputCounter++}`;
     const size = shape.reduce((a, b) => a * b, 1);
     const placeholder = new Tensor(tensorName, this, shape);
     this.inputData.set(tensorName, new Float32Array(size));
@@ -78,7 +78,6 @@ export class TensorGraph {
     traverse(result);
 
     this.backpasses = backpass(result.dependencies[0]).map((x) => x.code);
-    // for (const bb of this.backpasses) console.log(bb);
 
     for (const c of allContexts) {
       const code = c.generateKernel();
@@ -169,9 +168,7 @@ export class TensorGraph {
     const commandEncoder = this.device.createCommandEncoder();
 
     const kernels = [...this.kernels, ...this.backKernels];
-    console.log("ALL KERNELS=", kernels);
     for (let i = 0; i < kernels.length; i++) {
-      console.log("MAIN KERNEL LOOP[%i]", i, kernels[i]);
       const commandEncoder = this.device.createCommandEncoder();
       const kernel = kernels[i];
       // If this is not the first kernel, we need to copy data from the previous kernel
@@ -179,7 +176,6 @@ export class TensorGraph {
         for (let j = 0; j < i; j++) {
           const prevOutputs = kernels[j].getOutputBuffers();
           const currentInputs = kernel.inputBuffers.keys();
-          console.log("INNER LOOP j=%s", j, kernels[j]);
           for (const inputName of currentInputs) {
             const slicedInputName = inputName.slice(0, inputName.length - "_intermediate".length);
             if (inputName.includes("intermediate") && prevOutputs.has(slicedInputName)) {
@@ -193,12 +189,9 @@ export class TensorGraph {
                 this.outputSize * Float32Array.BYTES_PER_ELEMENT,
               );
             }
-            console.log("inputName=%s", inputName, prevOutputs, kernel, kernels[j]);
             if (prevOutputs.has(inputName)) {
               const sourceBuffer = prevOutputs.get(inputName)!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
-              //await logBuffer(this.device, sourceBuffer, `Kernel ${i} input ${inputName}`);
-              //
 
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
@@ -207,8 +200,8 @@ export class TensorGraph {
                 0,
                 this.outputSize * Float32Array.BYTES_PER_ELEMENT,
               );
-              const r = await logBuffer(this.device, sourceBuffer);
-              console.log("RESULT=", r);
+              //const r = await logBuffer(this.device, sourceBuffer);
+              //console.log("RESULT=", r);
             }
           }
         }

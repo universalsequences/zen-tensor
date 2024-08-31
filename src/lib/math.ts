@@ -165,15 +165,14 @@ export const reduce = (op: string) => (x: Arg) =>
   `;
       return reductionContext.emit(variableName, code, OpType.Reduction, _x.shape, _x);
     },
-    (node: ASTNode, gradOut: string) => {
-      const inputVar = node.dependencies[0].gradientVariable; // This is the gradient variable corresponding to the input of the sum operation
+    (node: ASTNode) => {
+      const inputVar = node.dependencies[0].gradientVariable;
       const gradientCode = `
     ${inputVar} += 1;
   `;
-//${gradOut} * ${v(node)}; // Distribute the gradient across all elements
       return {
         code: gradientCode,
-        intermediateVariables: [], //[trimIndex(v(node))],
+        intermediateVariables: [],
       };
     },
     x,
@@ -204,18 +203,15 @@ let ${resultVariable} = ${sumVariable} / f32(${countVariable});
 
       return reductionContext.emit(resultVariable, code, OpType.Reduction, _x.shape, _x); // Mean always outputs a single value
     },
-    (node: ASTNode, gradOut: string) => {
-      const inputVar = node.dependencies[0].variable;
-      const [countVariable] = node.context.useVariables(`mean_count`);
+    (node: ASTNode) => {
+      const inputVar = node.dependencies[0].gradientVariable; // This is the gradient variable corresponding to the input of the sum operation
       const gradientCode = `
-        var ${countVariable} = arrayLength(&${inputVar});
-        for (var i = 0u; i < arrayLength(&${inputVar}); i = i + 1u) {
-          ${node.dependencies[0].gradientVariable} += ${gradOut} / f32(${countVariable});
-        }
-      `;
+let ${node.variable}_length = arrayLength(&${trimIndex(v(node.dependencies[0]))});  // Total number of elements in x
+    ${inputVar} += 1 / f32(${node.variable}_length);
+  `;
       return {
         code: gradientCode,
-        intermediateVariables: [trimIndex(gradOut)],
+        intermediateVariables: [trimIndex(v(node.dependencies[0]))],
       };
     },
     x,
