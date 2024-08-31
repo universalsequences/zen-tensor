@@ -51,7 +51,7 @@ const TensorPage: React.FC = () => {
         const b = g.tensor([si]).ones();
         const c = g.tensor([si]).ones();
         const d = g.tensor([si]).ones();
-        const e = g.tensor([si]).ones();
+        const e = g.tensor([si]).fill(4);
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
@@ -59,8 +59,8 @@ const TensorPage: React.FC = () => {
         //const result = g.output(mult(b, c));
         //const result = g.output(sum(div(e, add(d, mult(a, add(b, c))))));
         //const result = g.output(mult(e, mult(e, add(a, add(c, b)))));
-        const result = g.output(sum(add(d, add(a, mult(b, c)))));
-        setComputation("div(e, add(d, mult(a, add(b, c)))))");
+        const result = g.output(mult(e, sum(add(d, add(a, mult(b, c))))));
+        setComputation("mult(e, sum(add(d, add(a, mult(b, c))))))");
 
         g.compile(result, [si]);
 
