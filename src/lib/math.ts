@@ -168,8 +168,8 @@ export const reduce = (op: string) => (x: Arg) =>
     (node: ASTNode, gradOut: string) => {
       const inputVar = node.dependencies[0].variable;
       const gradientCode = `
-        for (var i = 0u; i < arrayLength(&${inputVar}); i = i + 1u) {
-         // grad_${inputVar} += ${gradOut};
+for (var i = 0u; i < arrayLength(&${trimIndex(gradOut)}); i = i + 1u) {
+          ${node.dependencies[0].gradientVariable} += ${gradOut};
         }
       `;
       return {

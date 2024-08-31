@@ -1,5 +1,8 @@
 "use client";
 import React, { useEffect, useState, useRef } from "react";
+import Prism from "prismjs";
+import "prismjs/themes/prism-okaidia.css"; // Import the PrismJS theme
+import "prismjs/components/prism-wgsl"; // Import the specific language syntax
 
 // Import your TensorGraph class and other necessary types
 import {
@@ -29,11 +32,14 @@ const TensorPage: React.FC = () => {
   const [computation, setComputation] = useState("");
 
   useEffect(() => {
+    Prism.highlightAll();
+  }, [kernels]);
+
+  useEffect(() => {
     async function runTensorComputation() {
       try {
         if (running.current) return;
         running.current = true;
-        console.log("run tensor ");
         if (!navigator.gpu) {
           throw new Error("WebGPU not supported on this browser.");
         }
@@ -84,7 +90,6 @@ const TensorPage: React.FC = () => {
     runTensorComputation();
   }, []);
 
-  console.log("grads=", grads);
   const _grads: { [x: string]: Float32Array } = {};
   for (const k of grads.keys()) {
     _grads[k] = grads.get(k);
@@ -106,15 +111,15 @@ const TensorPage: React.FC = () => {
               {computation}
             </div>
           </div>
-          <div className="flex gap-5">
-            <pre className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative">
+          <div className="flex gap-5 h-64">
+            <div className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative  overflow-scroll">
               {JSON.stringify(result, null, 2)}
 
               <div className="absolute bottom-1 right-2 text-purple-500 text-xs">
                 forward output epoch: {epoch}
               </div>
-            </pre>
-            <div className="bg-zinc-900 text-zinc-400 text-xs rounded p-2 relative overflow-scroll h-96">
+            </div>
+            <div className="bg-zinc-900 text-zinc-400 text-xs rounded p-2 relative overflow-scroll">
               <div className="text-xs absolute right-5 bottom-2 text-purple-500">gradients</div>
               {Object.keys(_grads).map((name) => (
                 <div>
@@ -131,17 +136,29 @@ const TensorPage: React.FC = () => {
               <div className="text-center text-zinc-400">
                 <div className="text-purple-500">forwards</div>
               </div>
-              {kernels.map((k, i) => (
-                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 ">
-                  {k}
+              {kernels.map((code, i) => (
+                <pre
+                  style={{ backgroundColor: "#18181b" }}
+                  key={i}
+                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 "
+                >
+                  <code style={{ fontSize: 11 }} className="language-wgsl">
+                    {code}
+                  </code>
                 </pre>
               ))}
             </div>
             <div className="mt-2">
               <p className="text-center text-purple-500">backwards</p>
-              {backwards.map((k, i) => (
-                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1">
-                  {k}
+              {backwards.map((code, i) => (
+                <pre
+                  style={{ backgroundColor: "#18181b" }}
+                  key={i}
+                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1"
+                >
+                  <code style={{ fontSize: 11 }} className="language-wgsl">
+                    {code}
+                  </code>
                 </pre>
               ))}
             </div>

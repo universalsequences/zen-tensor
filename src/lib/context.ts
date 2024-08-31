@@ -158,9 +158,6 @@ export class KernelContext implements Context<ASTNode> {
       result.context.addOutput(out);
       const code = `${out}[index] = ${toScalar(result)};`;
       if (result.variable.includes("reduce")) {
-        console.log("code =", code);
-        console.log(result);
-        console.log("toscalar", toScalar(result));
       }
       let x = {
         context: result.context,
@@ -307,14 +304,11 @@ ${intermediateValues}
   }
 
   evalLazyInputs() {
-    console.log("evaluating LAZY INPUTS=", this.lazyInputs);
     for (const ii of this.lazyInputs) {
       const inp = ii + "_intermediate";
       this.tensorGraph.inputData.set(inp, new Float32Array(this.tensorGraph.outputSize));
-      console.log("creating inputData called", inp);
       this.addInput(inp);
     }
-    console.log("done");
   }
 
   getOutputs(): string[] {

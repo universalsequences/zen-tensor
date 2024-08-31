@@ -120,7 +120,6 @@ export class Kernel {
       entries,
     });
 
-    console.log("bindgroup entries", entries);
   }
 
   getInputBuffer(name: string): GPUBuffer | undefined {

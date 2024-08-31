@@ -18,7 +18,6 @@ export interface BackwardContext {
 }
 
 export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[] => {
-  console.log("backpass called with gradInit=", gradInit, finalNode);
   let otherKernels: BackwardContext[] = [];
   let backwardCode = "";
   let outputCode = "";
@@ -26,6 +25,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   const gradientInitializations = new Set<string>();
   const visited = new Set<ASTNode>();
   const inputNodes = new Set<ASTNode>();
+  const crossNodes = new Set<ASTNode>();
   const outputs: string[] = [];
   let inputs: string[] = [];
   const saved = new Set<string>();
@@ -36,6 +36,9 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     if (visited.has(node)) return;
     visited.add(node);
     if (node.context !== finalNode.context) {
+      if (node.variable.includes("cross")) {
+        crossNodes.add(node);
+      }
       otherKernels.push(...backpass(node, gradOut));
       return;
     }
@@ -61,11 +64,9 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       if (
         re.code.includes("grad_tensor_0 += grad_mult_result1 * add_result1_intermediate[index];")
       ) {
-        console.log("BACKPROP RETURNED FOR=", re, node);
       }
       const { code: backpropCode, intermediateVariables } = re;
       if (intermediateVariables) {
-        console.log("adding intermediates=", intermediateVariables);
         inputs.push(...intermediateVariables);
       }
       if (backpropCode.includes(intermediate(node))) {
@@ -73,7 +74,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       }
       for (const inp of finalNode.context.getInputs()) {
         if (node.dependencies.some((x) => x.variable === inp)) {
-          console.log("adding inut=", inp);
           inputs.push(inp);
         }
       }
@@ -99,7 +99,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   generateBackwardCode(finalNode, finalNode.gradientVariable);
   inputs = Array.from(new Set(inputs));
 
-  console.log("gradient initializations=", gradientInitializations);
   for (const init of gradientInitializations) {
     if (!saved.has(init)) initializations += `var ${init} = 0.0;\n`;
   }
@@ -110,6 +109,15 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     if (!visitedInputs.has(node.variable)) {
       visitedInputs.add(node.variable);
       const output = `grad_${node.variable}_output`;
+      outputs.push(output);
+      outputCode += `      ${output}[index] = ${node.gradientVariable};\n`;
+    }
+  });
+
+  crossNodes.forEach((node) => {
+    if (!visitedInputs.has(node.variable)) {
+      visitedInputs.add(node.variable);
+      const output = node.variable;
       outputs.push(output);
       outputCode += `      ${output}[index] = ${node.gradientVariable};\n`;
     }

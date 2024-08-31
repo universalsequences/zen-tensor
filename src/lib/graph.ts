@@ -78,7 +78,7 @@ export class TensorGraph {
     traverse(result);
 
     this.backpasses = backpass(result.dependencies[0]).map((x) => x.code);
-    for (const bb of this.backpasses) console.log(bb);
+    // for (const bb of this.backpasses) console.log(bb);
 
     for (const c of allContexts) {
       const code = c.generateKernel();
@@ -95,13 +95,8 @@ export class TensorGraph {
       }
     }
 
-    console.log("CONTEXTS=", this.contexts);
-
-    console.log("input data = ", this.inputData);
-
     let k = 0;
     for (const c of this.contexts) {
-      console.log("evaluating lazy inputs i=%s", k);
       c.evalLazyInputs();
       k++;
     }
@@ -141,7 +136,6 @@ export class TensorGraph {
           const data = new Float32Array(this.outputSize);
           this.inputData.set(inp, data);
           context.addInput(inp);
-          console.log("adding input", inp);
           const buffer = this.device.createBuffer({
             size: data.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -157,10 +151,6 @@ export class TensorGraph {
       const backward = context.backward;
       if (!backward) continue;
 
-      console.log("backward inputs", backward.inputs);
-      console.log("backward outputs", backward.outputs);
-      console.log(this.inputData);
-      console.log(this.inputBuffers);
       const k = new Kernel(
         this.device,
         backward.code,
@@ -188,9 +178,7 @@ export class TensorGraph {
           const prevOutputs = kernels[j].getOutputBuffers();
           const currentInputs = kernel.inputs;
           for (const inputName of currentInputs) {
-            console.log("inputName=%s", inputName, prevOutputs);
             const slicedInputName = inputName.slice(0, inputName.length - "_intermediate".length);
-            console.log("sliced input name=", slicedInputName, prevOutputs);
             if (inputName.includes("intermediate") && prevOutputs.has(slicedInputName)) {
               const sourceBuffer = prevOutputs.get(slicedInputName)!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
@@ -239,7 +227,6 @@ export class TensorGraph {
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);
         if (destBuffer) {
-          console.log("trying to fetch buffer for output=", output);
           const resultBuffer = this.device.createBuffer({
             size: destBuffer.size,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -256,7 +243,6 @@ export class TensorGraph {
           resultBuffer.unmap();
           resultBuffer.destroy();
           grads.set(output, resultArray);
-          console.log("RESULT ARRAY FOR KERNEL", resultArray);
         }
       }
     }
@@ -343,17 +329,12 @@ const everyDependencyMet = (
   if (!lazy) {
     return true;
   }
-  console.log("lazy inputs=", context.lazyInputs, contexts);
   for (const input of context.lazyInputs) {
     if (
       !contexts.some((c) => {
         return c.intermediateOutputs.includes(input);
       })
     ) {
-      console.log(
-        "FALSE!",
-        contexts.map((c) => [...c.intermediateOutputs]),
-      );
       return false;
     }
   }
