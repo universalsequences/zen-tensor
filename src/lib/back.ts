@@ -1,4 +1,4 @@
-import { v } from "./math";
+import { trimIndex, v } from "./math";
 import { constructGroup } from "./utils";
 import { ASTNode, intermediate, intermediateVar } from "./zen";
 
@@ -18,6 +18,7 @@ export interface BackwardContext {
 }
 
 export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[] => {
+  console.log("BACKPASS finalNode.context.id=", finalNode.context.id);
   let otherKernels: BackwardContext[] = [];
   let backwardCode = "";
   let outputCode = "";
@@ -51,7 +52,8 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       gradientInitializations.add(node.gradientVariable);
       saved.add(node.gradientVariable);
       if (initValue !== "1.0" && initValue !== "0.0") {
-        inputs.push(finalNode.variable);
+        console.log("adding finalNode.variable because init was ...", finalNode.variable);
+        // inputs.push(finalNode.variable);
       }
     }
     for (const dep of node.dependencies) {
@@ -67,14 +69,18 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       }
       const { code: backpropCode, intermediateVariables } = re;
       if (intermediateVariables) {
+        console.log("adding intermediates", intermediateVariables);
         inputs.push(...intermediateVariables);
       }
       if (backpropCode.includes(intermediate(node))) {
+        console.log("adding intermediates 2", intermediate(node));
         inputs.push(intermediate(node));
       }
       for (const inp of finalNode.context.getInputs()) {
         if (node.dependencies.some((x) => x.variable === inp)) {
-          inputs.push(inp);
+          console.log("adding getInput dep", inp);
+          // TODO - is this necessary?
+          // inputs.push(inp);
         }
       }
 
@@ -86,7 +92,11 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     // Process dependencies (children) after processing the current node
     node.dependencies.forEach((dep) => {
       const depGradOut = dep.gradientVariable ? v(dep) : `grad_${dep.variable}`;
-      generateBackwardCode(dep, depGradOut);
+      inputNodes.add(node);
+      console.log("recursive generate", depGradOut, dep, node);
+
+      const output = `grad_${node.variable}_output`;
+      generateBackwardCode(dep, `${output}[index]`);
     });
 
     // Identify input nodes (leaf nodes with no dependencies)
@@ -99,9 +109,27 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   generateBackwardCode(finalNode, finalNode.gradientVariable);
   inputs = Array.from(new Set(inputs));
 
+  if (
+    gradInit !== "1.0" &&
+    (initializations.includes(trimIndex(gradInit)) || backwardCode.includes(trimIndex(gradInit)))
+  ) {
+    if (!initializations.includes(trimIndex(gradInit) + "=")) {
+      console.log("trim addinging gradInit2=", gradInit);
+      inputs.push(trimIndex(gradInit));
+    }
+  }
+
   for (const init of gradientInitializations) {
     if (!saved.has(init)) initializations += `var ${init} = 0.0;\n`;
+    if (inputs.includes(init)) {
+      inputs = inputs.filter((x) => x !== init);
+    }
   }
+
+  console.log("finished finalNode.context", finalNode.context.id);
+  console.log("saveds=", saved);
+  console.log("inputs=", inputs);
+  console.log("inputNodes=", inputNodes);
 
   // Generate output code for leaf nodes (inputs)
   const visitedInputs = new Set<string>();
@@ -123,6 +151,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     }
   });
 
+  console.log("inputs code inputs=", inputs);
   const inputsCode = inputs.map((input, index) => constructGroup(index, "read", input)).join("\n");
   const outputsCode = outputs
     .map((output, index) => constructGroup(inputs.length + index, "read_write", output))

@@ -86,7 +86,7 @@ const grad = (
   };
 };
 
-const trimIndex = (x: string) => {
+export const trimIndex = (x: string) => {
   if (x.includes("[index]")) {
     return x.slice(0, x.length - "[index]".length);
   }
@@ -155,8 +155,8 @@ export const reduce = (op: string) => (x: Arg) =>
   memo(
     (context: Context<ASTNode>): ASTNode => {
       const reductionContext = context.useContext(OpType.Reduction);
-      const _x = reductionContext.gen(x);
       const [variableName] = reductionContext.useVariables(`reduce_result`);
+      const _x = reductionContext.gen(x);
       const code = `
     var ${variableName} = ${_x.variable}[0];
     for (var i = 1u; i < arrayLength(&${_x.variable}); i = i + 1u) {
@@ -166,15 +166,14 @@ export const reduce = (op: string) => (x: Arg) =>
       return reductionContext.emit(variableName, code, OpType.Reduction, _x.shape, _x);
     },
     (node: ASTNode, gradOut: string) => {
-      const inputVar = node.dependencies[0].variable;
+      const inputVar = node.dependencies[0].gradientVariable; // This is the gradient variable corresponding to the input of the sum operation
       const gradientCode = `
-for (var i = 0u; i < arrayLength(&${trimIndex(gradOut)}); i = i + 1u) {
-          ${node.dependencies[0].gradientVariable} += ${gradOut};
-        }
-      `;
+    ${inputVar} += 1;
+  `;
+//${gradOut} * ${v(node)}; // Distribute the gradient across all elements
       return {
         code: gradientCode,
-        intermediateVariables: [trimIndex(gradOut)],
+        intermediateVariables: [], //[trimIndex(v(node))],
       };
     },
     x,

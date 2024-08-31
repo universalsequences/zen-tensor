@@ -4,12 +4,13 @@ import { ASTNode } from "./zen";
 export class Kernel {
   private pipeline: GPUComputePipeline;
   private bindGroup: GPUBindGroup;
-  private inputBuffers: Map<string, GPUBuffer>;
-  private outputBuffers: Map<string, GPUBuffer> = new Map();
+  inputBuffers: Map<string, GPUBuffer>;
+  outputBuffers: Map<string, GPUBuffer> = new Map();
   private intermediateBuffers: GPUBuffer[] = [];
   inputs: string[];
   outputs: string[];
   context?: Context<ASTNode>;
+  kernelCode: string;
 
   constructor(
     private device: GPUDevice,
@@ -23,6 +24,7 @@ export class Kernel {
     this.inputs = inputs;
     this.outputs = outputs;
     this.inputBuffers = new Map(inputBuffers);
+    this.kernelCode = kernelCode;
 
     // Create the shader module
     const shaderModule = device.createShaderModule({
@@ -119,7 +121,6 @@ export class Kernel {
       layout: bindGroupLayout,
       entries,
     });
-
   }
 
   getInputBuffer(name: string): GPUBuffer | undefined {

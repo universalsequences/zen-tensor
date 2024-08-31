@@ -1,21 +1,13 @@
-import {
-  ASTNode,
-  Arg,
-  OpType,
-  Gen,
-  DataType,
-  toScalar,
-  intermediate,
-  intermediateVar,
-} from "./zen";
+import { ASTNode, Arg, OpType, Gen, DataType, toScalar, intermediateVar } from "./zen";
 import { Tensor } from "./input";
 import { TensorGraph } from "./graph";
 import { constructGroup } from "./utils";
 import { BackwardContext } from "./back";
+import { numberOp } from "./number";
 
 let contextIdx = 1;
 
-const MAX_BUFFERS = 3;
+const MAX_BUFFERS = 2;
 
 export interface BaseContext<T> {
   code: string[];
@@ -95,17 +87,9 @@ export class KernelContext implements Context<ASTNode> {
   }
   gen(x: Arg, force?: boolean): ASTNode {
     if (typeof x === "number") {
-      // todo need a number op to be used here...
-      return {
-        dependencies: [],
-        context: this,
-        opType: OpType.Regular,
-        type: DataType.Scalar,
-        variable: `${x}`,
-        code: "",
-        shape: [1],
-      };
+      return numberOp(x)(this);
     }
+
     if (x instanceof Tensor) {
       const rs = (x as Tensor).gen()(this);
       return rs;
@@ -136,14 +120,14 @@ export class KernelContext implements Context<ASTNode> {
     ) {
       // this tells us that this variable actually exists in a previous context as an intermediate value
       this.lazyInputs.push(result.variable);
-      console.log("PARENTS YALL=", result.variable);
-      if (result.opType !== this.opType || result.opType === OpType.Reduction) {
-      } else {
-        result.variable += "_intermediate";
-        result.type = DataType.Tensor;
-      }
+      //if (result.opType !== this.opType || result.opType === OpType.Reduction) {
+      //} else {
+      result.variable += "_intermediate";
+      result.type = DataType.Tensor;
+      // }
     }
 
+    return result;
     if (result.opType !== this.opType || result.opType === OpType.Reduction) {
       // We're crossing context boundaries
       const outputName = `cross_context_output_${this.id}_${this.idx++}`;
@@ -211,7 +195,14 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   useContext(opType: OpType): Context<ASTNode> {
-    if (this.usedVariables.length + this.inputs.size + this.outputs.size > MAX_BUFFERS) {
+    console.log(
+      "use context called with useVariables.length=",
+      this.usedVariables.length,
+      this.inputs.size,
+      this.outputs.size,
+      this.lazyInputs.length,
+    );
+    if (2 * this.usedVariables.length + this.inputs.size + this.outputs.size >= MAX_BUFFERS) {
       return new KernelContext(opType, this.tensorGraph, this);
     }
     if (this.opType !== opType || opType === OpType.Reduction) {

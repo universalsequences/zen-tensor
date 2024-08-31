@@ -53,19 +53,23 @@ const TensorPage: React.FC = () => {
         const g = new TensorGraph(device);
         const si = 3 * 3;
 
-        const a = g.tensor([si]).ones();
+        const a = g.tensor([si]).fill(3);
         const b = g.tensor([si]).ones();
         const c = g.tensor([si]).ones();
         const d = g.tensor([si]).ones();
-        const e = g.tensor([si]).fill(4);
+        const e = g.tensor([si]).fill(1);
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
         //const result = g.output(log2(mult(c, add(a, mult(add(a, b), mult(c, d))))));
         //const result = g.output(mult(b, c));
         //const result = g.output(sum(div(e, add(d, mult(a, add(b, c))))));
-        //const result = g.output(mult(e, mult(e, add(a, add(c, b)))));
-        const result = g.output(mult(e, sum(add(d, add(a, mult(b, c))))));
+        //const result = g.output(add(40, mult(e, mult(e, add(a, add(c, b))))));
+        //const result = g.output(add(100, sum(add(3, mult(5, add(a, b))))));
+        //const result = g.output(mult(2, sum(add(3, b))));
+        const result = g.output(sum(mult(add(a, c), b)));
+        //const result = g.output(mult(e, sum(add(d, add(a, mult(b, c))))));
+        //const result = g.output(mult(e, 4));
         setComputation("mult(e, sum(add(d, add(a, mult(b, c))))))");
 
         g.compile(result, [si]);
