@@ -15,6 +15,7 @@ import {
   sub,
   sine,
   sum,
+  div,
 } from "@/lib/index"; // Adjust the import path as needed
 
 const TensorPage: React.FC = () => {
@@ -25,6 +26,7 @@ const TensorPage: React.FC = () => {
   const [epoch, setEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [grads, setGrads] = useState(new Map<string, Float32Array>());
+  const [computation, setComputation] = useState("");
 
   useEffect(() => {
     async function runTensorComputation() {
@@ -43,18 +45,22 @@ const TensorPage: React.FC = () => {
 
         const device = await adapter.requestDevice();
         const g = new TensorGraph(device);
-        const si = 2 * 2;
+        const si = 3 * 3;
 
-        const a = g.tensor([si]).rand();
-        const b = g.tensor([si]).rand();
-        const c = g.tensor([si]).rand();
-        const d = g.tensor([si]).rand();
+        const a = g.tensor([si]).ones();
+        const b = g.tensor([si]).ones();
+        const c = g.tensor([si]).ones();
+        const d = g.tensor([si]).ones();
+        const e = g.tensor([si]).ones();
         const dim = [Math.sqrt(si), Math.sqrt(si)];
         const m = matmul(reshape(b, dim), reshape(a, dim));
         //const result = g.output(add(a, mult(c, sum(add(d, b)))));
         //const result = g.output(log2(mult(c, add(a, mult(add(a, b), mult(c, d))))));
         //const result = g.output(mult(b, c));
-        const result = g.output(add(d, mult(a, add(b, c))));
+        //const result = g.output(sum(div(e, add(d, mult(a, add(b, c))))));
+        //const result = g.output(mult(e, mult(e, add(a, add(c, b)))));
+        const result = g.output(sum(add(d, add(a, mult(b, c)))));
+        setComputation("div(e, add(d, mult(a, add(b, c)))))");
 
         g.compile(result, [si]);
 
@@ -64,7 +70,7 @@ const TensorPage: React.FC = () => {
         for (let i = 0; i < 1; i++) {
           const { forward, gradients } = await g.run();
           setGrads(gradients);
-          b.set(forward);
+          //b.set(forward);
           setResult(Array.from(forward));
           setEpoch(i);
           //await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -86,42 +92,58 @@ const TensorPage: React.FC = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">WebGPU Tensor Computation</h1>
       {error ? (
         <p className="text-red-500">{error}</p>
       ) : result ? (
         <div>
-          <h2 className="text-xl font-semibold mb-2">Computation Result:</h2>
-          epoch: {epoch}
-          <pre className="bg-gray-100 p-2 rounded text-zinc-900 relative">
-            {JSON.stringify(result, null, 2)}
-          </pre>
-          <div className="flex">
+          <div className="flex gap-2">
+            <div className="bg-zinc-900 text-zinc-400 p-2 rounded relative relative mb-5">
+              <span className="text-purple-500 mr-2">backend:</span>
+              webgpu
+            </div>
+            <div className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative mb-5 flex-1">
+              <span className="text-purple-500 mr-2">compute:</span>
+              {computation}
+            </div>
+          </div>
+          <div className="flex gap-5">
+            <pre className="bg-zinc-900 text-zinc-400 p-2 rounded relative flex-1 relative">
+              {JSON.stringify(result, null, 2)}
+
+              <div className="absolute bottom-1 right-2 text-purple-500 text-xs">
+                forward output epoch: {epoch}
+              </div>
+            </pre>
+            <div className="bg-zinc-900 text-zinc-400 text-xs rounded p-2 relative overflow-scroll h-96">
+              <div className="text-xs absolute right-5 bottom-2 text-purple-500">gradients</div>
+              {Object.keys(_grads).map((name) => (
+                <div>
+                  <div className="text-purple-500">{name}</div>
+                  <div className="w-96 text-wrap">
+                    {JSON.stringify(Array.from(_grads[name]), null, 4)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex pt-5 border-t-zinc-800  gap-5">
             <div className="mt-2">
               <div className="text-center text-zinc-400">
-                <div>forwards</div>
+                <div className="text-purple-500">forwards</div>
               </div>
               {kernels.map((k, i) => (
-                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-10">
+                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 ">
                   {k}
                 </pre>
               ))}
             </div>
             <div className="mt-2">
-              <p className="text-center text-zinc-400">backwards</p>
+              <p className="text-center text-purple-500">backwards</p>
               {backwards.map((k, i) => (
-                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-10">
+                <pre key={i} className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1">
                   {k}
                 </pre>
               ))}
-              <div className="bg-zinc-700 text-xs">
-                {Object.keys(_grads).map((name) => (
-                  <div>
-                    <div>{name}</div>
-                    {JSON.stringify(Array.from(_grads[name]))}
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </div>

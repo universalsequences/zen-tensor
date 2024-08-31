@@ -12,10 +12,7 @@ export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
     }
     const node = forward(context, ...args);
     node.backprop = (gradOut: string) => {
-      let code = `
-${backward(node, gradOut)}
-`;
-      return code;
+      return backward(node, gradOut);
     };
     memoized = node;
     return node;

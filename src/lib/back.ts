@@ -2,7 +2,13 @@ import { v } from "./math";
 import { constructGroup } from "./utils";
 import { ASTNode, intermediate, intermediateVar } from "./zen";
 
-export type BGen = (node: ASTNode, x: string) => string;
+export type BGen = (
+  node: ASTNode,
+  x: string,
+) => {
+  code: string;
+  intermediateVariables: string[];
+};
 
 // everything needed to get the kernel for this
 export interface BackwardContext {
@@ -21,7 +27,8 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   const visited = new Set<ASTNode>();
   const inputNodes = new Set<ASTNode>();
   const outputs: string[] = [];
-  const inputs: string[] = [];
+  let inputs: string[] = [];
+  const saved = new Set<string>();
 
   // Recursive function to generate backward code, processing the current node first
   const generateBackwardCode = (node: ASTNode, gradOut: string): void => {
@@ -39,16 +46,34 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       const initValue = node === finalNode ? gradInit : "0.0";
       initializations += `var ${node.gradientVariable} = ${initValue}; // initializer \n`;
       gradientInitializations.add(node.gradientVariable);
+      saved.add(node.gradientVariable);
+      if (initValue !== "1.0" && initValue !== "0.0") {
+        inputs.push(finalNode.variable);
+      }
+    }
+    for (const dep of node.dependencies) {
+      gradientInitializations.add(dep.gradientVariable);
     }
 
     // Generate the backpropagation code for the current node
     if (node.backprop) {
-      const backpropCode = node.backprop(gradOut);
+      const re = node.backprop(gradOut);
+      if (
+        re.code.includes("grad_tensor_0 += grad_mult_result1 * add_result1_intermediate[index];")
+      ) {
+        console.log("BACKPROP RETURNED FOR=", re, node);
+      }
+      const { code: backpropCode, intermediateVariables } = re;
+      if (intermediateVariables) {
+        console.log("adding intermediates=", intermediateVariables);
+        inputs.push(...intermediateVariables);
+      }
       if (backpropCode.includes(intermediate(node))) {
         inputs.push(intermediate(node));
       }
       for (const inp of finalNode.context.getInputs()) {
         if (node.dependencies.some((x) => x.variable === inp)) {
+          console.log("adding inut=", inp);
           inputs.push(inp);
         }
       }
@@ -72,6 +97,12 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
 
   // Start with the root of the AST (final operation)
   generateBackwardCode(finalNode, finalNode.gradientVariable);
+  inputs = Array.from(new Set(inputs));
+
+  console.log("gradient initializations=", gradientInitializations);
+  for (const init of gradientInitializations) {
+    if (!saved.has(init)) initializations += `var ${init} = 0.0;\n`;
+  }
 
   // Generate output code for leaf nodes (inputs)
   const visitedInputs = new Set<string>();

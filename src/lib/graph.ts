@@ -67,7 +67,7 @@ export class TensorGraph {
       if (node.context !== currentContext) {
         currentContext = node.context;
         if (everyDependencyMet(currentContext, this.contexts)) {
-          this.contexts = [...this.contexts, currentContext];
+          //this.contexts = [...this.contexts, currentContext];
         }
       }
       currentContext.code = [node.code, ...currentContext.code];
@@ -80,11 +80,15 @@ export class TensorGraph {
     this.backpasses = backpass(result.dependencies[0]).map((x) => x.code);
     for (const bb of this.backpasses) console.log(bb);
 
+    for (const c of allContexts) {
+      const code = c.generateKernel();
+      c.kernelCode = code;
+    }
     // brute force remaining contexts via dependencies...
-    for (let i = 0; i < allContexts.size * 2; i++) {
+    for (let i = 0; i < allContexts.size * 4; i++) {
       for (const c of allContexts) {
         if (!this.contexts.includes(c)) {
-          if (everyDependencyMet(c, this.contexts)) {
+          if (everyDependencyMet(c, this.contexts, true)) {
             this.contexts.push(c);
           }
         }
@@ -95,8 +99,11 @@ export class TensorGraph {
 
     console.log("input data = ", this.inputData);
 
+    let k = 0;
     for (const c of this.contexts) {
+      console.log("evaluating lazy inputs i=%s", k);
       c.evalLazyInputs();
+      k++;
     }
 
     // Create input buffers
@@ -207,6 +214,8 @@ export class TensorGraph {
                 0,
                 this.outputSize * Float32Array.BYTES_PER_ELEMENT,
               );
+              const r = await logBuffer(this.device, sourceBuffer);
+              console.log("RESULT=", r);
             }
           }
         }
@@ -296,7 +305,7 @@ export class TensorGraph {
   }
 }
 
-async function logBuffer(device: GPUDevice, buffer: GPUBuffer, label: string) {
+async function logBuffer(device: GPUDevice, buffer: GPUBuffer) {
   const stagingBuffer = device.createBuffer({
     size: buffer.size,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -309,11 +318,16 @@ async function logBuffer(device: GPUDevice, buffer: GPUBuffer, label: string) {
   await stagingBuffer.mapAsync(GPUMapMode.READ);
   const copyArrayBuffer = stagingBuffer.getMappedRange();
   const data = new Float32Array(copyArrayBuffer);
-  console.log(`${label}:`, Array.from(data));
+  const x = [Array.from(data)];
   stagingBuffer.unmap();
+  return x;
 }
 
-const everyDependencyMet = (context: Context<ASTNode>, contexts: Context<ASTNode>[]) => {
+const everyDependencyMet = (
+  context: Context<ASTNode>,
+  contexts: Context<ASTNode>[],
+  lazy = false,
+) => {
   for (const input of context.inputs.keys()) {
     if (input.includes("tensor")) {
       continue;
@@ -323,6 +337,23 @@ const everyDependencyMet = (context: Context<ASTNode>, contexts: Context<ASTNode
         return c.outputs.has(input + "_out");
       })
     ) {
+      return false;
+    }
+  }
+  if (!lazy) {
+    return true;
+  }
+  console.log("lazy inputs=", context.lazyInputs, contexts);
+  for (const input of context.lazyInputs) {
+    if (
+      !contexts.some((c) => {
+        return c.intermediateOutputs.includes(input);
+      })
+    ) {
+      console.log(
+        "FALSE!",
+        contexts.map((c) => [...c.intermediateOutputs]),
+      );
       return false;
     }
   }

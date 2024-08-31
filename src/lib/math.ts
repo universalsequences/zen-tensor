@@ -55,9 +55,16 @@ const grad = (
   op: string,
   node: ASTNode,
   gradOut: string,
-  customLogic?: (dep: ASTNode, i: number) => string,
+  customLogic?: (
+    dep: ASTNode,
+    i: number,
+  ) => {
+    code: string;
+    intermediateVariables?: string[];
+  },
 ) => {
   let code = "";
+  let intermediateVariables: string[] = [];
   const visited = new Set<string>();
   for (let i = node.dependencies.length - 1; i >= 0; i--) {
     const dep = node.dependencies[i];
@@ -65,39 +72,61 @@ const grad = (
     visited.add(dep.gradientVariable);
 
     // Use custom logic if provided, otherwise default to default gradient calculation
-    const gradCode = customLogic
+    const grad = customLogic
       ? customLogic(dep, i)
-      : `let ${dep.gradientVariable} += ${gradOut};\n`;
-    code += gradCode;
+      : { code: `let ${dep.gradientVariable} += ${gradOut};\n` };
+    code += grad.code;
+    if (grad.intermediateVariables) {
+      intermediateVariables.push(...grad.intermediateVariables);
+    }
   }
-  return code;
+  return {
+    code,
+    intermediateVariables: intermediateVariables.map((x) => trimIndex(x)),
+  };
+};
+
+const trimIndex = (x: string) => {
+  if (x.includes("[index]")) {
+    return x.slice(0, x.length - "[index]".length);
+  }
+  return x;
 };
 
 export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
-  grad("+", node, gradOut, (dep) => `${dep.gradientVariable} += ${gradOut};\n`),
+  grad("+", node, gradOut, (dep) => ({
+    code: `${dep.gradientVariable} += ${gradOut};\n`,
+    intermediateVariables: [gradOut],
+  })),
 );
 
 export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>
-  grad(
-    "-",
-    node,
-    gradOut,
-    (dep, i) => `${dep.gradientVariable} += ${i === 0 ? gradOut : `-${gradOut}`};\n`,
-  ),
+  grad("-", node, gradOut, (dep, i) => ({
+    code: `${dep.gradientVariable} += ${i === 0 ? gradOut : `-${gradOut}`};\n`,
+  })),
 );
 
-export const v = (a: ASTNode) => (a.type === DataType.Tensor ? toScalar(a) : `${intermediate(a)}[index]`);
+export const v = (a: ASTNode) =>
+  a.type === DataType.Tensor ? toScalar(a) : `${intermediate(a)}[index]`;
 
 export const mult = binaryOp("mult", "*", (node: ASTNode, gradOut: string) => {
   return grad("*", node, gradOut, (dep, i) => {
     const otherDep = node.dependencies[1 - i];
     if (node.dependencies[0].variable === node.dependencies[1].variable) {
       // Handling the case where both dependencies are the same (e.g., b * b)
-      return `
+      const code = `
 ${dep.gradientVariable} += 2.0 * ${gradOut}*${v(otherDep)}
 `;
+      return {
+        code,
+        intermediateVariables: [gradOut, v(otherDep)],
+      };
     } else {
-      return `${dep.gradientVariable} += ${gradOut} * ${v(otherDep)};\n`;
+      const code = `${dep.gradientVariable} += ${gradOut} * ${v(otherDep)};\n`;
+      return {
+        code,
+        intermediateVariables: [gradOut, v(otherDep)],
+      };
     }
   });
 });
@@ -106,10 +135,18 @@ export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
   grad("/", node, gradOut, (dep, i) => {
     if (i === 0) {
       // Gradient for the first operand (dividend)
-      return `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])};\n`;
+      const code = `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])};\n`;
+      return {
+        code,
+        intermediateVariables: [gradOut, v(node.dependencies[i])],
+      };
     } else {
       // Gradient for the second operand (divisor)
-      return `${dep.gradientVariable} += -${gradOut} * ${v(node.dependencies[0])} / (${v(dep)} * ${v(dep)});\n`;
+      const code = `${dep.gradientVariable} += -${gradOut} * ${v(node.dependencies[0])} / (${v(dep)} * ${v(dep)});\n`;
+      return {
+        code,
+        intermediateVariables: [gradOut, v(node.dependencies[0]), v(dep)],
+      };
     }
   }),
 );
@@ -132,10 +169,13 @@ export const reduce = (op: string) => (x: Arg) =>
       const inputVar = node.dependencies[0].variable;
       const gradientCode = `
         for (var i = 0u; i < arrayLength(&${inputVar}); i = i + 1u) {
-          grad_${inputVar}[i] += ${gradOut};
+         // grad_${inputVar} += ${gradOut};
         }
       `;
-      return gradientCode;
+      return {
+        code: gradientCode,
+        intermediateVariables: [trimIndex(gradOut)],
+      };
     },
     x,
   );
@@ -147,9 +187,11 @@ export const mean = (x: Arg) =>
     (context: Context<ASTNode>): ASTNode => {
       const reductionContext = context.useContext(OpType.Reduction);
       const _x = reductionContext.gen(x);
-      const [sumVariable] = reductionContext.useVariables(`mean_sum`);
-      const [countVariable] = reductionContext.useVariables(`mean_count`);
+      //const [sumVariable] = reductionContext.useVariables(`mean_sum`);
+      //const [countVariable] = reductionContext.useVariables(`mean_count`);
       const [resultVariable] = reductionContext.useVariables(`mean_result`);
+      const sumVariable = `${resultVariable}_sum`;
+      const countVariable = `${resultVariable}_count`;
 
       const code = `
 var ${sumVariable} = 0.0;
@@ -167,11 +209,15 @@ let ${resultVariable} = ${sumVariable} / f32(${countVariable});
       const inputVar = node.dependencies[0].variable;
       const [countVariable] = node.context.useVariables(`mean_count`);
       const gradientCode = `
+        var ${countVariable} = arrayLength(&${inputVar});
         for (var i = 0u; i < arrayLength(&${inputVar}); i = i + 1u) {
-          grad_${inputVar}[i] += ${gradOut} / f32(${countVariable});
+          ${node.dependencies[0].gradientVariable} += ${gradOut} / f32(${countVariable});
         }
       `;
-      return gradientCode;
+      return {
+        code: gradientCode,
+        intermediateVariables: [trimIndex(gradOut)],
+      };
     },
     x,
   );
@@ -193,7 +239,10 @@ let ${variableName} = ${name}(${toScalar(_freq)});
         const gradientCode = `
           let grad_${inputVar} = ${gradOut} * ${derivative}(${inputVar});
         `;
-        return gradientCode;
+        return {
+          code: gradientCode,
+          intermediateVariables: [],
+        };
       },
       freq,
     );

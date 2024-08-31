@@ -46,12 +46,15 @@ export class Tensor {
   }
 
   gen(): Gen {
-    return memo((context: Context<ASTNode>) => {
-      context.addInput(this.name);
-      return {
-        ...context.emit(this.name, "", OpType.Regular, this.shape),
-        type: DataType.Tensor,
-      };
-    }, () => "");
+    return memo(
+      (context: Context<ASTNode>) => {
+        context.addInput(this.name);
+        return {
+          ...context.emit(this.name, "", OpType.Regular, this.shape),
+          type: DataType.Tensor,
+        };
+      },
+      () => ({ code: "", intermediateVariables: [] }),
+    );
   }
 }

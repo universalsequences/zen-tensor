@@ -38,6 +38,7 @@ export type Context<T> = BaseContext<T> & {
   id: number;
   children: Context<T>[];
   parentContext: Context<T> | undefined;
+  getAllChildren: () => Context<T>[];
   gen: (x: Arg, force?: boolean) => T;
   addInput: (x: string) => void;
   addOutput: (x: string) => void;
@@ -84,6 +85,14 @@ export class KernelContext implements Context<ASTNode> {
     }
   }
 
+  getAllChildren() {
+    let childs: Context<ASTNode>[] = [];
+    for (const c of this.children) {
+      childs.push(c);
+      childs.push(...c.getAllChildren());
+    }
+    return childs;
+  }
   gen(x: Arg, force?: boolean): ASTNode {
     if (typeof x === "number") {
       // todo need a number op to be used here...
@@ -119,11 +128,20 @@ export class KernelContext implements Context<ASTNode> {
       return result;
     }
 
-    if (!this.usedVariables.includes(result.variable)) {
-      console.log("YOOOO USED VAR NOT HAVE", result.variable, result);
+    const children = this.getAllChildren();
+
+    if (
+      !this.usedVariables.includes(result.variable) &&
+      children.some((p) => p.usedVariables.includes(result.variable))
+    ) {
+      // this tells us that this variable actually exists in a previous context as an intermediate value
       this.lazyInputs.push(result.variable);
-      result.variable += "_intermediate";
-      result.type = DataType.Tensor;
+      console.log("PARENTS YALL=", result.variable);
+      if (result.opType !== this.opType || result.opType === OpType.Reduction) {
+      } else {
+        result.variable += "_intermediate";
+        result.type = DataType.Tensor;
+      }
     }
 
     if (result.opType !== this.opType || result.opType === OpType.Reduction) {
@@ -139,6 +157,11 @@ export class KernelContext implements Context<ASTNode> {
       const out = `${outputName}_out`;
       result.context.addOutput(out);
       const code = `${out}[index] = ${toScalar(result)};`;
+      if (result.variable.includes("reduce")) {
+        console.log("code =", code);
+        console.log(result);
+        console.log("toscalar", toScalar(result));
+      }
       let x = {
         context: result.context,
         dependencies: [result],
@@ -156,8 +179,12 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   useVariables(...names: string[]) {
-    this.idx++;
-    const variables = names.map((n) => `${n}${this.idx}`);
+    let c = this;
+    while (c.parentContext) {
+      c = c.parentContext;
+    }
+    c.idx++;
+    const variables = names.map((n) => `${n}${c.idx}`);
     this.usedVariables.push(...variables);
     return variables;
   }
@@ -280,12 +307,14 @@ ${intermediateValues}
   }
 
   evalLazyInputs() {
-    console.log("LAZY INPUTS=", this.lazyInputs);
+    console.log("evaluating LAZY INPUTS=", this.lazyInputs);
     for (const ii of this.lazyInputs) {
       const inp = ii + "_intermediate";
       this.tensorGraph.inputData.set(inp, new Float32Array(this.tensorGraph.outputSize));
+      console.log("creating inputData called", inp);
       this.addInput(inp);
     }
+    console.log("done");
   }
 
   getOutputs(): string[] {
