@@ -1,12 +1,12 @@
 import { BGen } from "./back";
 import { Context } from "./context";
-import { Arg, ASTNode, PartialGen } from "./zen";
+import { Arg, ASTNode, PartialGen, NodeGen } from "./zen";
 
 // TODO - add backward PartialGen representing the backpropagation functions for calculating gradients
 export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
   let memoized: ASTNode | undefined = undefined;
 
-  return (context: Context<ASTNode>): ASTNode => {
+  const resultGen = (context: Context<ASTNode>): ASTNode => {
     if (memoized) {
       return memoized;
     }
@@ -15,6 +15,8 @@ export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
       return backward(node, gradOut);
     };
     memoized = node;
+    (resultGen as NodeGen).node = node;
     return node;
   };
+  return resultGen as NodeGen;
 };

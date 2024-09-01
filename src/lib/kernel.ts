@@ -138,7 +138,6 @@ export class Kernel {
   getOutputBuffer(name?: string): GPUBuffer | undefined {
     if (!name) {
       for (const key of this.outputBuffers.keys()) {
-        console.log('getting final buffer for key=', key)
         return this.outputBuffers.get(key);
       }
       return undefined;

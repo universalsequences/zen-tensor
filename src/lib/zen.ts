@@ -1,3 +1,4 @@
+import { BGen } from "./back";
 import { Context } from "./context";
 import { Tensor } from "./input";
 
@@ -12,6 +13,9 @@ export type Gen = (context: Context<ASTNode>) => ASTNode;
 export type Arg = Gen | Tensor | number;
 
 export type PartialGen = (context: Context<ASTNode>, ...arg: Arg[]) => ASTNode;
+export type NodeGen = PartialGen & {
+  node?: ASTNode;
+};
 
 export enum DataType {
   Scalar = 0,
@@ -29,12 +33,14 @@ export interface ASTNode {
   context: Context<ASTNode>;
   type: DataType;
   shape: number[]; // [rows, cols] for 2D, [length] for 1D
-  backprop?: (x: string) => {gg
+  backprop?: (x: string) => {
     code: string;
     intermediateVariables: string[];
   };
   gradientVariable: string; // New field for gradient variable
   parent?: ASTNode;
+  result?: number[];
+  gradient?: number[];
 }
 
 /**

@@ -63,13 +63,16 @@ const TensorPage: React.FC = () => {
         const c = g.tensor([si], "c").fill(1);
         const net = mult(a, b);
         */
-        const a = g.tensor([si], "a").fill(0.2);
-        const b = g.tensor([si], "c").fill(0.8);
+        const a = g.tensor([si], "a").ones();
+        const b = g.tensor([si], "b").fill(-0.8);
         const c = g.tensor([si], "c").fill(0.9);
         //const net = add(1, a); // Simply use a single variable
-        const result = g.output(binaryCrossEntropy(mult(a, b), c));
+        const computation_a = add(a, b);
+        const computation = mult(a, computation_a);
+
+        const result = g.output(binaryCrossEntropy(computation, c));
         g.compile(result, [si]);
-        setComputation("binaryCrossEntropy(add(0, a), c))");
+        setComputation("binaryCrossEntropy(mult(a, add(a, b)), c))");
 
         // update ui
         setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
@@ -78,11 +81,16 @@ const TensorPage: React.FC = () => {
         for (let i = 0; i < 10000; i++) {
           const { forward, gradients } = await g.run();
           setGrads(gradients);
-          setResult(Array.from(forward));
+          // setResult(Array.from(forward));
           setEpoch(i);
           a.learn(0.001);
           b.learn(0.01);
           const map = new Map<string, Float32Array>();
+          console.log("computation.node.result=", computation.node?.result);
+          console.log("computation.node.gradient=", computation.node?.gradient);
+          console.log("computation_a.node.result=", computation_a.node?.result);
+          console.log("computation_a.node.gradient=", computation_a.node?.gradient);
+          setResult(computation.node?.result || []);
           map.set("a", a.val());
           map.set("b", b.val());
           setTensors(map);

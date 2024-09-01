@@ -43,6 +43,7 @@ export type Context<T> = BaseContext<T> & {
   getOutputs: () => string[];
   lazyInputs: string[];
   evalLazyInputs: () => void;
+  nodes: ASTNode[];
 };
 
 const visited = new Map<string, ASTNode>();
@@ -66,6 +67,7 @@ export class KernelContext implements Context<ASTNode> {
   intermediateOutputs: string[] = [];
   backwardContext?: BackwardContext;
   lazyInputs: string[] = [];
+  nodes: ASTNode[] = [];
 
   constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context<ASTNode>) {
     this.opType = opType;
@@ -160,6 +162,7 @@ export class KernelContext implements Context<ASTNode> {
     for (const dep of dependencies) {
       dep.parent = astNode;
     }
+    this.nodes.push(astNode);
     return astNode;
   }
 
