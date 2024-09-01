@@ -50,7 +50,7 @@ export class TensorGraph {
       const [v] = context.useVariables("output");
       context.addOutput(v);
       const code = `${v}[index] = ${toScalar(result, DataType.Scalar)};`;
-      return context.emit(v, code, OpType.Regular, this.outputShape, result);
+      return context.emit("output", v, code, OpType.Regular, this.outputShape, result);
     };
   }
 

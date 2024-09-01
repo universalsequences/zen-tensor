@@ -69,7 +69,13 @@ export class Tensor {
       (context: Context<ASTNode>) => {
         context.addInput(this.name);
         return {
-          ...context.emit(this.name, "", OpType.Regular, this.shape),
+          ...context.emit(
+            extractName(this.name) || "tensor",
+            this.name,
+            "",
+            OpType.Regular,
+            this.shape,
+          ),
           type: DataType.Tensor,
         };
       },
@@ -77,3 +83,8 @@ export class Tensor {
     );
   }
 }
+
+export const extractName = (name: string) => {
+  const parts = name.split("_");
+  return parts.length >= 3 ? parts[1] : "";
+};

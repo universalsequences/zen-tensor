@@ -13,7 +13,7 @@ export const relu = (x: Arg) =>
       console.log("relu for=", _x);
 
       let code = `let ${res} = max(0.0, ${v(_x)});`;
-      return context.emit(res, code, OpType.Regular, _x.shape, _x);
+      return context.emit("relu", res, code, OpType.Regular, _x.shape, _x);
     },
     (node: ASTNode, gradOut: string) => {
       console.log("relu back=", node, gradOut);

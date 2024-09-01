@@ -13,6 +13,7 @@ export interface BaseContext<T> {
   code: string[];
   opType: OpType;
   emit: (
+    operation: string,
     variable: string,
     code: string,
     opType: OpType,
@@ -142,6 +143,7 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   emit(
+    operation: string,
     variable: string,
     code: string,
     opType: OpType,
@@ -150,6 +152,7 @@ export class KernelContext implements Context<ASTNode> {
   ): ASTNode {
     const gradientVariable = `grad_${variable}`;
     let astNode = {
+      operation,
       context: this,
       gradientVariable,
       variable,

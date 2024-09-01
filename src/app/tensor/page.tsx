@@ -23,6 +23,7 @@ import {
   div,
   binaryCrossEntropy,
 } from "@/lib/index"; // Adjust the import path as needed
+import { printAST } from "@/lib/print";
 
 const TensorPage: React.FC = () => {
   const running = useRef(false);
@@ -63,37 +64,44 @@ const TensorPage: React.FC = () => {
         const c = g.tensor([si], "c").fill(1);
         const net = mult(a, b);
         */
-        const a = g.tensor([si], "a").ones();
-        const b = g.tensor([si], "b").fill(-0.8);
-        const c = g.tensor([si], "c").fill(0.9);
+        const a = g.tensor([si], "a").rand();
+        const b = g.tensor([si], "b").ones();
+        const c = g.tensor([si], "c").fill(0.1);
+        const d = g.tensor([si], "d").fill(-0.1);
         //const net = add(1, a); // Simply use a single variable
-        const computation_a = add(a, b);
-        const computation = mult(a, computation_a);
+        const computation_a = relu(add(d, a));
+        const computation = mult(b, computation_a);
 
         const result = g.output(binaryCrossEntropy(computation, c));
         g.compile(result, [si]);
-        setComputation("binaryCrossEntropy(mult(a, add(a, b)), c))");
 
         // update ui
         setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
         setBackwards(g.backpasses);
 
-        for (let i = 0; i < 10000; i++) {
+        for (let i = 0; i < 10; i++) {
           const { forward, gradients } = await g.run();
+          if (computation.node) {
+            setComputation(printAST(computation.node));
+          }
           setGrads(gradients);
+
           // setResult(Array.from(forward));
           setEpoch(i);
           a.learn(0.001);
           b.learn(0.01);
           const map = new Map<string, Float32Array>();
+          /*
           console.log("computation.node.result=", computation.node?.result);
           console.log("computation.node.gradient=", computation.node?.gradient);
           console.log("computation_a.node.result=", computation_a.node?.result);
           console.log("computation_a.node.gradient=", computation_a.node?.gradient);
+          */
           setResult(computation.node?.result || []);
           map.set("a", a.val());
           map.set("b", b.val());
           setTensors(map);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } catch (err) {
         console.log(err);

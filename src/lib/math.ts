@@ -20,6 +20,7 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
 
       // Determine output shape
       let outputShape: number[];
+      console.log("context gen...", name, _x, _y, )
       if (arraysEqual(shapeX, shapeY)) {
         outputShape = shapeX;
       } else if (isScalar(shapeX) || isScalar(shapeY)) {
@@ -29,7 +30,7 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
       }
 
       let code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
-      return context.emit(variableName, code, OpType.Regular, outputShape, _x, _y);
+      return context.emit(op, variableName, code, OpType.Regular, outputShape, _x, _y);
     },
     backwards,
     x,
@@ -161,7 +162,14 @@ export const reduce = (op: string) => (x: Arg) =>
       ${variableName} = ${variableName} ${op} ${toScalar(_x, DataType.Scalar, "i")};
     }
   `;
-      return reductionContext.emit(variableName, code, OpType.Reduction, _x.shape, _x);
+      return reductionContext.emit(
+        `reduce.${op}`,
+        variableName,
+        code,
+        OpType.Reduction,
+        _x.shape,
+        _x,
+      );
     },
     (node: ASTNode) => {
       const inputVar = node.dependencies[0].gradientVariable;
@@ -199,7 +207,14 @@ for (var i = 0u; i < arrayLength(&${_x.variable}); i = i + 1u) {
 let ${resultVariable} = ${sumVariable} / f32(${countVariable});
 `;
 
-      return reductionContext.emit(resultVariable, code, OpType.Reduction, _x.shape, _x); // Mean always outputs a single value
+      return reductionContext.emit(
+        "reduce.mean",
+        resultVariable,
+        code,
+        OpType.Reduction,
+        _x.shape,
+        _x,
+      ); // Mean always outputs a single value
     },
     (node: ASTNode) => {
       const inputVar = node.dependencies[0].gradientVariable; // This is the gradient variable corresponding to the input of the sum operation
@@ -225,7 +240,7 @@ export const func = (name: string, derivative: string) => {
         const code = `
 let ${variableName} = ${name}(${toScalar(_freq)});
   `;
-        return context.emit(variableName, code, OpType.Regular, _freq.shape, _freq);
+        return context.emit(name, variableName, code, OpType.Regular, _freq.shape, _freq);
       },
       (node: ASTNode, gradOut: string) => {
         const inputVar = node.dependencies[0].variable;
@@ -289,7 +304,7 @@ for (var k = 0u; k < ${K}; k = k + 1u) {
 let ${resultVar} = ${sum};
   `;
 
-      let m = context.emit(resultVar, code, OpType.Reduction, outputShape, _a, _b);
+      let m = context.emit("matmul", resultVar, code, OpType.Reduction, outputShape, _a, _b);
       return m;
     },
     (_node: ASTNode, _gradOut: string) => {

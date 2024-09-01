@@ -41,6 +41,7 @@ export interface ASTNode {
   parent?: ASTNode;
   result?: number[];
   gradient?: number[];
+  operation?: string;
 }
 
 /**
