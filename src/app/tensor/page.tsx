@@ -22,6 +22,7 @@ import {
   sum,
   div,
   binaryCrossEntropy,
+  sigmoid,
 } from "@/lib/index"; // Adjust the import path as needed
 import { printAST } from "@/lib/print";
 
@@ -56,7 +57,7 @@ const TensorPage: React.FC = () => {
 
         const device = await adapter.requestDevice();
         const g = new TensorGraph(device);
-        const si = 3 * 3;
+        const si = 32 * 32;
 
         /*
         const a = g.tensor([si], "a").fill(1);
@@ -67,9 +68,9 @@ const TensorPage: React.FC = () => {
         const a = g.tensor([si], "a").rand();
         const b = g.tensor([si], "b").ones();
         const c = g.tensor([si], "c").fill(0.1);
-        const d = g.tensor([si], "d").fill(-0.1);
+        const d = g.tensor([si], "d").fill(-0.5);
         //const net = add(1, a); // Simply use a single variable
-        const computation_a = relu(add(d, a));
+        const computation_a = sigmoid(relu(add(d, a)));
         const computation = mult(b, computation_a);
 
         const result = g.output(binaryCrossEntropy(computation, c));
@@ -79,7 +80,7 @@ const TensorPage: React.FC = () => {
         setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
         setBackwards(g.backpasses);
 
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 1000; i++) {
           const { forward, gradients } = await g.run();
           if (computation.node) {
             setComputation(printAST(computation.node));
@@ -101,7 +102,7 @@ const TensorPage: React.FC = () => {
           map.set("a", a.val());
           map.set("b", b.val());
           setTensors(map);
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          //await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } catch (err) {
         console.log(err);
