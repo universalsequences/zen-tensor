@@ -1,5 +1,5 @@
 import { ASTNode, Arg, OpType, Gen, DataType, toScalar, intermediateVar } from "./zen";
-import { Tensor } from "./input";
+import { Tensor } from "./tensor";
 import { TensorGraph } from "./graph";
 import { constructGroup } from "./utils";
 import { BackwardContext } from "./back";
@@ -47,8 +47,6 @@ export type Context<T> = BaseContext<T> & {
   nodes: ASTNode[];
 };
 
-const visited = new Map<string, ASTNode>();
-
 /**
  * A KernelContext collects operations that may be run on the same kernel
  * Using this, it generates code for the
@@ -89,7 +87,7 @@ export class KernelContext implements Context<ASTNode> {
     return childs;
   }
 
-  gen(x: Arg, force?: boolean): ASTNode {
+  gen(x: Arg, isReshape?: boolean): ASTNode {
     if (typeof x === "number") {
       return numberOp(x)(this);
     }
@@ -99,18 +97,12 @@ export class KernelContext implements Context<ASTNode> {
       return rs;
     }
 
-    if (force) {
+    if (isReshape) {
+      // reshape gen calls to it's arg just get returned w/o any processing.
       return x(this);
     }
 
     const result = (x as Gen)(this);
-
-    // TODO - can we place this in the context?
-    const memoized = visited.get(result.variable);
-    if (memoized) {
-      this.addInput(memoized.variable);
-      return memoized;
-    }
 
     if (result.opType === OpType.Reshape) {
       return result;

@@ -1,7 +1,7 @@
 import { KernelContext, Context } from "./context";
 import { Kernel } from "./kernel";
 import { OpType, Arg, Gen, ASTNode, DataType, toScalar } from "./zen";
-import { Tensor } from "./input";
+import { Tensor } from "./tensor";
 import { backpass } from "./back";
 
 export interface GraphResult {

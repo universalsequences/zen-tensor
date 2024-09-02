@@ -23,6 +23,26 @@ export class Tensor {
     return this;
   }
 
+  round() {
+    let val = this.val();
+    if (val) {
+      for (let i = 0; i < val.length; i++) {
+        val[i] = Math.round(i);
+      }
+    }
+    return this;
+  }
+
+  mul(factor: number) {
+    let val = this.val();
+    if (val) {
+      for (let i = 0; i < val.length; i++) {
+        val[i] *= factor;
+      }
+    }
+    return this;
+  }
+
   grad() {
     return this.graph.gradientData.get(this.name)!;
   }
@@ -51,7 +71,7 @@ export class Tensor {
     return this.fill(1);
   }
 
-  zeroes() {
+  zeros() {
     return this.fill(0);
   }
 

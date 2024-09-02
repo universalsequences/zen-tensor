@@ -48,7 +48,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       // Initialize the final output gradient to 1.0, others to 0.0
       const initValue = node === finalNode ? gradInit : "0.0";
       initializations += `var ${node.gradientVariable} = ${initValue}; // initializer \n`;
-      console.log("node gradient variable =", node.gradientVariable, initializations, initValue);
       gradientInitializations.add(node.gradientVariable);
       saved.add(node.gradientVariable);
     }
@@ -80,7 +79,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     node.dependencies.forEach((dep) => {
       inputNodes.add(node);
       const output = `grad_${node.variable}_output`;
-      console.log("node sending node/dep before recursve", node, dep);
       generateBackwardCode(dep, `${output}[index]`);
     });
 

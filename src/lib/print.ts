@@ -7,7 +7,7 @@ export const printAST = (astNode: ASTNode): string => {
   }
   let value = "";
   if (astNode.result && astNode.gradient) {
-    value = ` [${astNode.result[0]},${astNode.gradient[0]}]`;
+    value = ""; //` [${astNode.result[0]},${astNode.gradient[0]}]`;
   }
 
   return `(${op} ${astNode.dependencies.map((x) => printAST(x)).join(" ")}${value})`;

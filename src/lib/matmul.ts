@@ -49,7 +49,11 @@ let ${resultVar} = ${sum};
       ];
       console.log("grad for matmul node=", node, gradOut);
       const parentGrad =
-        node.parent?.operation === "output" ? gradOut : `${node.parent?.gradientVariable}_output[grad_out_idx]`;
+        node.parent?.operation === "output"
+          ? gradOut
+          : node.parent?.context !== node.context && node.parent?.gradientVariable !== "grad_bce_result1"
+            ? `${node.parent?.gradientVariable}_intermediate_output[grad_out_idx]`
+            : `${node.parent?.gradientVariable}_output[grad_out_idx]`;
       const aVar = node.dependencies[0].variable;
       const bVar = node.dependencies[1].variable;
       const gradCode = `
