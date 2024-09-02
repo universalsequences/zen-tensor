@@ -8,3 +8,4 @@ export * from "./dot";
 export * from "./reshape";
 export * from "./activations";
 export * from "./loss";
+export * from "./matmul";

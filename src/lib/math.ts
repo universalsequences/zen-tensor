@@ -20,7 +20,7 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
 
       // Determine output shape
       let outputShape: number[];
-      console.log("context gen...", name, _x, _y, )
+      console.log("context gen...", name, _x, _y);
       if (arraysEqual(shapeX, shapeY)) {
         outputShape = shapeX;
       } else if (isScalar(shapeX) || isScalar(shapeY)) {
@@ -260,7 +260,7 @@ let ${variableName} = ${name}(${toScalar(_freq)});
 export const sine = func("sin", "cos"); // sin'(x) = cos(x)
 export const log2 = func("log2", "1.0 / (x * log(2.0))"); // d/dx(log2(x)) = 1 / (x * log(2))
 
-export const matmul = (a: Arg, b: Arg) =>
+export const matmul_broke = (a: Arg, b: Arg) =>
   memo(
     (context: Context<ASTNode>): ASTNode => {
       context = context.useContext(OpType.Reduction);

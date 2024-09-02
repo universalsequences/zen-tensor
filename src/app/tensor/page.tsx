@@ -57,7 +57,8 @@ const TensorPage: React.FC = () => {
 
         const device = await adapter.requestDevice();
         const g = new TensorGraph(device);
-        const si = 32 * 32;
+        const si = 4;
+        const si2 = 4;
 
         /*
         const a = g.tensor([si], "a").fill(1);
@@ -65,16 +66,16 @@ const TensorPage: React.FC = () => {
         const c = g.tensor([si], "c").fill(1);
         const net = mult(a, b);
         */
-        const a = g.tensor([si], "a").rand();
-        const b = g.tensor([si], "b").ones();
-        const c = g.tensor([si], "c").fill(0.1);
+        const a = g.tensor([si, si], "a").rand();
+        const b = g.tensor([si, si], "b").fill(0.2);
+        const c = g.tensor([si, si], "c").fill(0.93);
         const d = g.tensor([si], "d").fill(-0.5);
         //const net = add(1, a); // Simply use a single variable
-        const computation_a = sigmoid(relu(add(d, a)));
-        const computation = mult(b, computation_a);
+        //const computation_a = sigmoid(relu(add(d, a)));
+        const computation = matmul(add(a, b), b);
 
         const result = g.output(binaryCrossEntropy(computation, c));
-        g.compile(result, [si]);
+        g.compile(result, [si, si]);
 
         // update ui
         setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
@@ -90,7 +91,7 @@ const TensorPage: React.FC = () => {
           // setResult(Array.from(forward));
           setEpoch(i);
           a.learn(0.001);
-          b.learn(0.01);
+          //b.learn(0.001);
           const map = new Map<string, Float32Array>();
           /*
           console.log("computation.node.result=", computation.node?.result);
