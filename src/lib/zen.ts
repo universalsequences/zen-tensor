@@ -39,7 +39,7 @@ export interface ASTNode {
   };
   gradientVariable: string; // New field for gradient variable
   parent?: ASTNode;
-  result?: number[];
+  result?: () => Promise<number[]>;
   gradient?: number[];
   operation?: string;
 }

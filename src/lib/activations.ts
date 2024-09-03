@@ -33,6 +33,7 @@ export const sigmoid = (x: Arg) =>
       const context = c.useContext(OpType.Regular);
       const [res] = context.useVariables(`sigmoid_result`);
       const _x = context.gen(x);
+      console.log("sigmoid arg=", _x);
       let code = `let ${res} = 1.0 / (1.0 + exp(-${v(_x)}));`;
       return context.emit("sigmoid", res, code, OpType.Regular, _x.shape, _x);
     },
@@ -40,7 +41,7 @@ export const sigmoid = (x: Arg) =>
       const inputVar = node.dependencies[0].variable;
       const gradCode = `
         let sigmoid_${inputVar} = 1.0 / (1.0 + exp(-${v(node.dependencies[0])}));
-        let grad_${inputVar} = ${gradOut} * sigmoid_${inputVar} * (1.0 - sigmoid_${inputVar});
+        ${node.gradientVariable} = ${gradOut} * sigmoid_${inputVar} * (1.0 - sigmoid_${inputVar});
       `;
       return {
         code: gradCode,

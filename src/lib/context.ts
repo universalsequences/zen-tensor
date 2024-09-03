@@ -1,7 +1,7 @@
 import { ASTNode, Arg, OpType, Gen, DataType, toScalar, intermediateVar } from "./zen";
 import { Tensor } from "./tensor";
 import { TensorGraph } from "./graph";
-import { constructGroup } from "./utils";
+import { constructGroup, shapeToSize } from "./utils";
 import { BackwardContext } from "./back";
 import { numberOp } from "./number";
 
@@ -45,6 +45,8 @@ export type Context<T> = BaseContext<T> & {
   lazyInputs: string[];
   evalLazyInputs: () => void;
   nodes: ASTNode[];
+  size: number;
+  shape?: number[];
 };
 
 /**
@@ -67,6 +69,8 @@ export class KernelContext implements Context<ASTNode> {
   backwardContext?: BackwardContext;
   lazyInputs: string[] = [];
   nodes: ASTNode[] = [];
+  shape?: number[];
+  lazyInputShapes = new Map<string, number[]>();
 
   constructor(opType: OpType, tensorGraph: TensorGraph, parentContext?: Context<ASTNode>) {
     this.opType = opType;
@@ -116,6 +120,7 @@ export class KernelContext implements Context<ASTNode> {
     ) {
       // this tells us that this variable actually exists in a previous context as an intermediate value
       this.lazyInputs.push(result.variable);
+      this.lazyInputShapes.set(result.variable, result.shape);
       result.variable += "_intermediate";
       result.type = DataType.Tensor;
     }
@@ -158,6 +163,7 @@ export class KernelContext implements Context<ASTNode> {
       dep.parent = astNode;
     }
     this.nodes.push(astNode);
+    this.shape = shape;
     return astNode;
   }
 
@@ -258,9 +264,15 @@ ${intermediateValues}
   evalLazyInputs() {
     for (const ii of this.lazyInputs) {
       const inp = ii + "_intermediate";
-      this.tensorGraph.inputData.set(inp, new Float32Array(this.tensorGraph.outputSize));
+      let found = this.nodes.filter((x) => x.variable === ii);
+      let fff = this.lazyInputShapes.get(ii);
+      this.tensorGraph.inputData.set(inp, new Float32Array(shapeToSize(fff!)));
       this.addInput(inp);
     }
+  }
+
+  get size() {
+    return this.shape?.reduce((a, b) => a * b, 1) || this.tensorGraph.outputSize;
   }
 
   getOutputs(): string[] {

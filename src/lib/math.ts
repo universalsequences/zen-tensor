@@ -10,26 +10,38 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
     (context: Context<ASTNode>): ASTNode => {
       context = context.useContext(OpType.Regular);
       const [variableName] = context.useVariables(`${name}_result`);
-
       const _x = context.gen(x);
       const _y = context.gen(y);
-
-      // get shapes on args
       const shapeX = _x.shape;
       const shapeY = _y.shape;
-
-      // Determine output shape
       let outputShape: number[];
-      console.log("context gen...", name, _x, _y);
+
       if (arraysEqual(shapeX, shapeY)) {
         outputShape = shapeX;
       } else if (isScalar(shapeX) || isScalar(shapeY)) {
         outputShape = isScalar(shapeX) ? shapeY : shapeX;
+      } else if (shapeX.length === shapeY.length + 1 && arraysEqual(shapeX.slice(1), shapeY)) {
+        // This handles the case of adding a matrix and a vector
+        outputShape = shapeX;
       } else {
         throw new Error(`Incompatible shapes for ${name} operation: ${shapeX} and ${shapeY}`);
       }
 
-      let code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
+      let code: string;
+      if (arraysEqual(shapeX, shapeY) || isScalar(shapeX) || isScalar(shapeY)) {
+        code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
+      } else {
+        // Broadcasting for matrix + vector
+        const batchSize = shapeX[0];
+        const vectorSize = shapeY[0];
+        code = `
+// broadcast
+          let batchIndex = index / ${vectorSize}u;
+          let vectorIndex = index % ${vectorSize}u;
+          let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y, DataType.Scalar, "vectorIndex")};
+        `;
+      }
+
       return context.emit(op, variableName, code, OpType.Regular, outputShape, _x, _y);
     },
     backwards,
@@ -56,6 +68,8 @@ const grad = (
   customLogic?: (
     dep: ASTNode,
     i: number,
+    isBroadcasting: boolean,
+    shapes: number[][],
   ) => {
     code: string;
     intermediateVariables?: string[];
@@ -64,20 +78,25 @@ const grad = (
   let code = "";
   let intermediateVariables: string[] = [];
   const visited = new Set<string>();
+  const shapes = node.dependencies.map((dep) => dep.shape);
+  const isBroadcasting =
+    shapes[0].length !== shapes[1].length || !arraysEqual(shapes[0], shapes[1]);
+
   for (let i = node.dependencies.length - 1; i >= 0; i--) {
     const dep = node.dependencies[i];
     if (visited.has(dep.gradientVariable)) continue;
     visited.add(dep.gradientVariable);
 
-    // Use custom logic if provided, otherwise default to default gradient calculation
     const grad = customLogic
-      ? customLogic(dep, i)
-      : { code: `let ${dep.gradientVariable} += ${gradOut};\n` };
+      ? customLogic(dep, i, isBroadcasting, shapes)
+      : { code: `${dep.gradientVariable} += ${gradOut};\n` };
+
     code += grad.code;
     if (grad.intermediateVariables) {
       intermediateVariables.push(...grad.intermediateVariables);
     }
   }
+
   return {
     code,
     intermediateVariables: intermediateVariables.map((x) => trimIndex(x)),
@@ -93,10 +112,44 @@ export const trimIndex = (x: string) => {
 };
 
 export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
-  grad(node, gradOut, (dep) => ({
-    code: `${dep.gradientVariable} += ${gradOut};\n`,
-    intermediateVariables: [gradOut],
-  })),
+  grad(node, gradOut, (dep, i, isBroadcasting, shapes) => {
+    if (!isBroadcasting) {
+      return {
+        code: `${dep.gradientVariable} += ${gradOut};\n`,
+        intermediateVariables: [gradOut],
+      };
+    } else {
+      // Handle broadcasting case
+      const [shape1, shape2] = shapes;
+      if (shape1.length === shape2.length + 1 && arraysEqual(shape1.slice(1), shape2)) {
+        // Matrix + Vector broadcasting
+        const batchSize = shape1[0];
+        const vectorSize = shape2[0];
+        if (i === 0) {
+          // Matrix
+          return {
+            code: `${dep.gradientVariable} += ${gradOut};\n`,
+            intermediateVariables: [gradOut],
+          };
+        } else {
+          // Vector
+          let intermediate = `grad_${node.parent?.variable}_output`;
+          return {
+            code: `
+              // broadcast
+              for (var i = 0u; i < ${batchSize}u; i = i + 1u) {
+                 ${dep.gradientVariable} += ${intermediate}[i];
+              }
+              //${dep.gradientVariable} /= ${batchSize};
+            `,
+            intermediateVariables: [gradOut],
+          };
+        }
+      } else {
+        throw new Error(`Unsupported broadcasting case for shapes: ${shape1} and ${shape2}`);
+      }
+    }
+  }),
 );
 
 export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>

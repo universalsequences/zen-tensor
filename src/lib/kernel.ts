@@ -1,4 +1,5 @@
 import { Context } from "./context";
+import { shapeToSize } from "./utils";
 import { ASTNode } from "./zen";
 
 export class Kernel {
@@ -11,6 +12,7 @@ export class Kernel {
   outputs: string[];
   context?: Context<ASTNode>;
   kernelCode: string;
+  size: number;
 
   constructor(
     private device: GPUDevice,
@@ -20,7 +22,10 @@ export class Kernel {
     intermediates: string[],
     inputBuffers: Map<string, GPUBuffer>,
     size: number,
+    nodes: ASTNode[],
   ) {
+    this.size = size;
+    console.log("KERNEL size=", size, outputs, intermediates);
     this.inputs = inputs;
     this.outputs = outputs;
     this.inputBuffers = new Map(inputBuffers);
@@ -52,6 +57,7 @@ export class Kernel {
       });
     });
 
+    console.log("nodes=", nodes, intermediates);
     // Add intermediate buffer layout entries
     intermediates.forEach((name, index) => {
       bindGroupLayoutEntries.push({
@@ -83,6 +89,7 @@ export class Kernel {
     // Add input bindings
     inputs.forEach((name, index) => {
       const buffer = this.inputBuffers.get(name);
+      console.log("setting input=%s for kernel", name, buffer, this);
       entries.push({
         binding: index,
         resource: { buffer: buffer! },
@@ -91,8 +98,16 @@ export class Kernel {
 
     // Create output buffers and add bindings
     outputs.forEach((name, index) => {
+      const node = nodes.find(
+        (x) =>
+          `${x.gradientVariable}_intermediate_output` === name ||
+          `${x.gradientVariable}_output` === name,
+      );
+      console.log("output nodes=%s", name, node, outputs, nodes, size);
+      const _size = node?.shape ? shapeToSize(node.shape) : size;
+      console.log("size determined for output=%s", name, _size);
       const buffer = device.createBuffer({
-        size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
+        size: _size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
       });
       this.outputBuffers.set(name, buffer);
@@ -104,6 +119,7 @@ export class Kernel {
 
     // Add intermediate buffer bindings
     intermediates.forEach((name, index) => {
+      const node = nodes.find((x) => x.variable === `${name}_intermediate`);
       const buffer = device.createBuffer({
         size: size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,

@@ -7,6 +7,7 @@ export class Tensor {
   private name: string;
   private graph: TensorGraph;
   private shape: number[];
+  private i = 0;
 
   constructor(name: string, graph: TensorGraph, shape: number[]) {
     this.name = name;
@@ -27,7 +28,7 @@ export class Tensor {
     let val = this.val();
     if (val) {
       for (let i = 0; i < val.length; i++) {
-        val[i] = Math.round(i);
+        val[i] = Math.round(val[i]);
       }
     }
     return this;
@@ -60,6 +61,10 @@ export class Tensor {
       result[i] = val[i] - learningRate * grad[i];
     }
     this.set(result);
+    if (this.i % 10 === 0) {
+      // console.log("tensor. val/grad", this.name, val, grad);
+    }
+    this.i++;
   }
 
   fill(value: number) {

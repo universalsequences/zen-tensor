@@ -16,6 +16,7 @@ export const matmul = (a: Arg, b: Arg) =>
         throw new Error(`Incompatible shapes for matrix multiplication: ${shapeA} and ${shapeB}`);
       }
       const outputShape = [shapeA[0], shapeB[1]];
+
       const [resultVar] = context.useVariables("matmul");
       const [sum, M, N, K, row, col] = [
         `sum_${resultVar}`,
@@ -47,11 +48,11 @@ let ${resultVar} = ${sum};
         `${node.gradientVariable}_N`,
         `${node.gradientVariable}_K`,
       ];
-      console.log("grad for matmul node=", node, gradOut);
       const parentGrad =
         node.parent?.operation === "output"
           ? gradOut
-          : node.parent?.context !== node.context && node.parent?.gradientVariable !== "grad_bce_result1"
+          : node.parent?.context !== node.context &&
+              node.parent?.gradientVariable !== "grad_bce_result1"
             ? `${node.parent?.gradientVariable}_intermediate_output[grad_out_idx]`
             : `${node.parent?.gradientVariable}_output[grad_out_idx]`;
       const aVar = node.dependencies[0].variable;
@@ -60,7 +61,7 @@ let ${resultVar} = ${sum};
 let ${M} = ${node.dependencies[0].shape[0]}u;
 let ${N} = ${node.dependencies[1].shape[1]}u;
 let ${K} = ${node.dependencies[0].shape[1]}u;
-let row = index / ${K};
+let row = index / ${N};
 let col = index % ${K};
 
 // Gradient for A

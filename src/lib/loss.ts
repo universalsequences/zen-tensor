@@ -22,29 +22,36 @@ export const binaryCrossEntropy = (predicted: Arg, actual: Arg) =>
         let ${res} = -(${v(_actual)} * log(${clampedPredicted}) +
         (1.0 - ${v(_actual)}) * log(1.0 - ${clampedPredicted}));
       `;
-      return context.emit("binaryCrossEntropy", res, code, OpType.Regular, _predicted.shape, _predicted, _actual);
+      return context.emit(
+        "binaryCrossEntropy",
+        res,
+        code,
+        OpType.Regular,
+        _predicted.shape,
+        _predicted,
+        _actual,
+      );
     },
     (node: ASTNode, gradOut: string) => {
       const predictedVar = node.dependencies[0].variable; // Variable for predicted output from forward pass
       const actualVar = node.dependencies[1].variable; // Variable for actual labels from forward pass
-
       const clampedPredictedVar = `clamp(${predictedVar}[index], 1e-7, 1.0 - 1e-7)`;
 
       // Gradient with respect to the predicted output
       const gradPredictedCode = `
-    ${node.gradientVariable} = (${clampedPredictedVar} - ${v(node.dependencies[1])}) /
+    ${node.gradientVariable} = (${clampedPredictedVar} - ${actualVar}[index]) /
     (${clampedPredictedVar} * (1.0 - ${clampedPredictedVar}));
   `;
 
-      // Gradient with respect to the actual labels (usually not used, but included for completeness)
+      // Gradient with respect to the actual labels
       const gradActualCode = `
-    ${node.dependencies[1].gradientVariable} +=
-    -${v(node.dependencies[1])} / ${clampedPredictedVar} +
-    (1.0 - ${v(node.dependencies[1])}) / (1.0 - ${clampedPredictedVar});
+    ${node.dependencies[1].gradientVariable} = -log(${clampedPredictedVar}) + log(1.0 - ${clampedPredictedVar});
   `;
 
       // Combine both gradient codes into a single code block
       const code = `
+    let y_pred = ${clampedPredictedVar};
+    let y_true = ${actualVar}[index];
     ${gradPredictedCode}
     ${gradActualCode}
   `;
