@@ -62,6 +62,7 @@ const TensorPage: React.FC = () => {
     const inputSize = 2;
     const batchSize = 4;
     const outputSize = 1;
+    const hiddenSize = 4; // New hidden layer
 
     // XOR inputs
     const X = g.tensor([batchSize, inputSize], "X").set([
@@ -83,12 +84,14 @@ const TensorPage: React.FC = () => {
       0, // XOR(1, 1) -> 0
     ]);
 
-    // Weights and biases
-    const W = g.tensor([inputSize, outputSize], "W").rand().mul(0.01); // Initialize weight
-    const b = g.tensor([outputSize], "b").fill(0); // Initialize bias
+    const W1 = g.tensor([inputSize, hiddenSize], "W1").xavierInit();
+    const b1 = g.tensor([hiddenSize], "b1").fill(0);
+    const W2 = g.tensor([hiddenSize, outputSize], "W2").xavierInit();
+    const b2 = g.tensor([outputSize], "b2").fill(0);
 
-    // Logistic regression model
-    const logits = add(matmul(X, W), b);
+    // Two-layer neural network
+    const hidden = sigmoid(add(matmul(X, W1), b1));
+    const logits = add(matmul(hidden, W2), b2);
     const predictions = sigmoid(logits);
 
     // Loss function: Binary Cross-Entropy
@@ -103,12 +106,14 @@ const TensorPage: React.FC = () => {
     }
 
     // Training loop
-    const learningRate = 0.1;
+    const learningRate = 0.001;
     for (let i = 0; i < 10000; i++) {
       const { forward, gradients } = await g.run();
 
-      W.learn(learningRate);
-      b.learn(learningRate);
+      W1.learn(learningRate);
+      b1.learn(learningRate);
+      W2.learn(learningRate);
+      b2.learn(learningRate);
 
       if (i % 10 === 0) {
         setGrads(gradients);
@@ -116,10 +121,12 @@ const TensorPage: React.FC = () => {
           setResult((await predictions.node?.result()) || []);
         }
         const map = new Map<string, Float32Array>();
-        map.set("W", W.val());
-        map.set("b", b.val());
+        map.set("W1", W1.val());
+        map.set("b1", b1.val());
+        map.set("W2", W2.val());
+        map.set("b2", b2.val());
         map.set("labels", Y.val());
-        map.set("input", X.val());
+        map.set("X", X.val());
         setTensors(map);
         // Update weights and biases using gradient descent
 

@@ -39,23 +39,19 @@ export const binaryCrossEntropy = (predicted: Arg, actual: Arg) =>
 
       // Gradient with respect to the predicted output
       const gradPredictedCode = `
-    ${node.gradientVariable} = (${clampedPredictedVar} - ${actualVar}[index]) /
-    (${clampedPredictedVar} * (1.0 - ${clampedPredictedVar}));
-  `;
+${node.gradientVariable} = (y_pred - y_true) / (y_pred * (1.0 - y_pred));
+`;
 
-      // Gradient with respect to the actual labels
-      const gradActualCode = `
-    ${node.dependencies[1].gradientVariable} = -log(${clampedPredictedVar}) + log(1.0 - ${clampedPredictedVar});
-  `;
+      // We'll remove the gradient calculation for actual labels as it's not needed for backpropagation
+      const gradActualCode = "";
 
       // Combine both gradient codes into a single code block
       const code = `
-    let y_pred = ${clampedPredictedVar};
-    let y_true = ${actualVar}[index];
-    ${gradPredictedCode}
-    ${gradActualCode}
-  `;
-
+let y_pred = ${clampedPredictedVar};
+let y_true = ${actualVar}[index];
+${gradPredictedCode}
+${gradActualCode}
+`;
       // Return the generated code and any intermediate variables needed for further operations
       return {
         code: code.trim(),

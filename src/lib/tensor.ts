@@ -89,6 +89,49 @@ export class Tensor {
     return this.set(array);
   }
 
+  randn() {
+  const size = this.shape.reduce((a, b) => a * b, 1);
+  const array = new Float32Array(size);
+
+  for (let i = 0; i < size; i += 2) {
+    // Box-Muller transform
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const z2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
+
+    array[i] = z1;
+    if (i + 1 < size) {
+      array[i + 1] = z2;
+    }
+  }
+
+  return this.set(array);
+}
+
+  xavierInit() {
+  const fanIn = this.shape[0];
+  const fanOut = this.shape[1] || this.shape[0];  // Use fanIn if it's a 1D tensor
+  const std = Math.sqrt(2 / (fanIn + fanOut));
+
+  const size = this.shape.reduce((a, b) => a * b, 1);
+  const array = new Float32Array(size);
+
+  for (let i = 0; i < size; i += 2) {
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const z2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
+
+    array[i] = z1 * std;
+    if (i + 1 < size) {
+      array[i + 1] = z2 * std;
+    }
+  }
+
+  return this.set(array);
+}
+
   gen(): Gen {
     return memo(
       (context: Context<ASTNode>) => {
