@@ -147,7 +147,7 @@ export class Kernel {
     const passEncoder = commandEncoder.beginComputePass();
     passEncoder.setPipeline(this.pipeline);
     passEncoder.setBindGroup(0, this.bindGroup);
-    passEncoder.dispatchWorkgroups(numWorkgroups);
+    passEncoder.dispatchWorkgroups(numWorkgroups, 1,1);
     passEncoder.end();
   }
 

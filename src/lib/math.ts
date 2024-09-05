@@ -122,7 +122,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
       // Handle broadcasting case
       const [shape1, shape2] = shapes;
       if (shape1.length === shape2.length + 1 && arraysEqual(shape1.slice(1), shape2)) {
-        // Matrix + Vector broadcasting
+         // Matrix + Vector broadcasting
         const batchSize = shape1[0];
         const vectorSize = shape2[0];
         if (i === 0) {
@@ -132,15 +132,17 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
             intermediateVariables: [gradOut],
           };
         } else {
-          // Vector
+          // Vector (bias)
           let intermediate = `grad_${node.parent?.variable}_output`;
           return {
             code: `
               // broadcast
+              let vectorIndex = index % ${vectorSize}u;
+              var grad_sum = 0.0;
               for (var i = 0u; i < ${batchSize}u; i = i + 1u) {
-                 ${dep.gradientVariable} += ${intermediate}[i];
+                grad_sum += ${intermediate}[i * ${vectorSize}u + vectorIndex];
               }
-              //${dep.gradientVariable} /= ${batchSize};
+              ${dep.gradientVariable} = grad_sum;
             `,
             intermediateVariables: [gradOut],
           };

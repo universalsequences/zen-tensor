@@ -24,8 +24,17 @@ import {
   binaryCrossEntropy,
   sigmoid,
   ASTNode,
+  leakyRelu,
 } from "@/lib/index"; // Adjust the import path as needed
 import { printAST } from "@/lib/print";
+
+const bin = (predictions: number[], targets: Float32Array) => {
+  return predictions.map((p, i) => {
+    const t = targets[i];
+    const p_clipped = Math.max(Math.min(p, 1 - 1e-7), 1e-7);
+    return -(t * Math.log(p_clipped) + (1 - t) * Math.log(1 - p_clipped));
+  });
+};
 
 const TensorPage: React.FC = () => {
   const running = useRef(false);
@@ -58,11 +67,105 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
+    // 1. Define the network parameters
+    const inputSize = 2;
+    const outputSize = 1;
+    const batchSize = 4;
+    const learningRate = 0.01;
+    const epochs = 20000;
+
+    // 2. Initialize tensors
+    const X = g.tensor([batchSize, inputSize], "X").set([
+      0,
+      0, // AND(0, 0) = 0
+      0,
+      1, // AND(0, 1) = 0
+      1,
+      0, // AND(1, 0) = 0
+      1,
+      1, // AND(1, 1) = 1
+    ]);
+
+    const Y = g.tensor([batchSize, outputSize], "Y").set([
+      0, // AND(0, 0) = 0
+      0, // AND(0, 1) = 0
+      0, // AND(1, 0) = 0
+      1, // AND(1, 1) = 1
+    ]);
+
+    // 3. Initialize weights and bias
+    const W = g.tensor([inputSize, outputSize], "W").fill(0);
+    const b = g.tensor([outputSize], "b").fill(0);
+
+    // 4. Define the network
+    const logits = add(matmul(X, W), b);
+    const predictions = sigmoid(logits);
+
+    // 5. Define loss function
+    const loss = g.output(binaryCrossEntropy(predictions, Y));
+
+    // 6. Compile the computation graph
+    g.compile(loss, [batchSize]);
+    setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
+    setBackwards(g.backpasses);
+    if (predictions.node) {
+      setComputation(predictions.node);
+    }
+
+    // 7. Training loop
+    for (let epoch = 0; epoch < epochs; epoch++) {
+      const { forward, gradients } = await g.run();
+
+      W.learn(learningRate);
+      b.learn(learningRate);
+
+      if (epoch % 1 === 0) {
+        setGrads(gradients);
+
+        // Log predictions
+        if (predictions.node?.result) {
+          const pred = await predictions.node.result();
+          setResult(pred);
+        }
+
+        // Log weights and bias
+        // Update weights and biases
+        const map = new Map<string, Float32Array>();
+        map.set("W", W.val());
+        map.set("b", b.val());
+        //map.set("W3", W3.val());
+        //map.set("b3", b3.val());
+        map.set("x", X.val());
+        map.set("y", Y.val());
+        setTensors(map);
+
+        let sum = forward.reduce((a, b) => a + b, 0);
+        setLoss(sum / forward.length);
+        setEpoch(epoch);
+      }
+    }
+  }, []);
+
+  const run33 = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    if (!navigator.gpu) {
+      throw new Error("WebGPU not supported on this browser.");
+    }
+
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error("No appropriate GPUAdapter sounds");
+    }
+
+    const device = await adapter.requestDevice();
+    const g = new TensorGraph(device);
+
     // Network parameters
     const inputSize = 2;
     const batchSize = 4;
     const outputSize = 1;
-    const hiddenSize = 4; // New hidden layer
+    const hiddenSize = 32; // New hidden layer
 
     // XOR inputs
     const X = g.tensor([batchSize, inputSize], "X").set([
@@ -84,13 +187,21 @@ const TensorPage: React.FC = () => {
       0, // XOR(1, 1) -> 0
     ]);
 
-    const W1 = g.tensor([inputSize, hiddenSize], "W1").xavierInit();
+    function heInit(shape: [number, number]) {
+      const fanIn = shape[0];
+      return Array(shape[0] * shape[1])
+        .fill(0)
+        .map(() => (Math.random() * 2 - 1) * Math.sqrt(2 / fanIn));
+    }
+
+    const W1 = g.tensor([inputSize, hiddenSize], "W1").set(heInit([inputSize, hiddenSize]));
     const b1 = g.tensor([hiddenSize], "b1").fill(0);
     const W2 = g.tensor([hiddenSize, outputSize], "W2").xavierInit();
+
     const b2 = g.tensor([outputSize], "b2").fill(0);
 
     // Two-layer neural network
-    const hidden = sigmoid(add(matmul(X, W1), b1));
+    const hidden = leakyRelu(add(matmul(X, W1), b1));
     const logits = add(matmul(hidden, W2), b2);
     const predictions = sigmoid(logits);
 
@@ -107,7 +218,7 @@ const TensorPage: React.FC = () => {
 
     // Training loop
     const learningRate = 0.001;
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 2; i++) {
       const { forward, gradients } = await g.run();
 
       W1.learn(learningRate);
@@ -118,7 +229,9 @@ const TensorPage: React.FC = () => {
       if (i % 10 === 0) {
         setGrads(gradients);
         if (predictions.node?.result) {
-          setResult((await predictions.node?.result()) || []);
+          const pred = (await predictions.node?.result()) || [];
+          setResult(pred);
+          const manualLoss = bin(pred, Y.val());
         }
         const map = new Map<string, Float32Array>();
         map.set("W1", W1.val());
@@ -131,7 +244,6 @@ const TensorPage: React.FC = () => {
         // Update weights and biases using gradient descent
 
         // Logging or other processing
-        console.log(`Epoch ${i}, Loss: ${forward}`);
         let sum = forward.reduce((a, b) => a + b, 0);
         setLoss(sum / forward.length);
         setEpoch(i);

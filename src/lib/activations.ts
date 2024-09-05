@@ -50,3 +50,26 @@ export const sigmoid = (x: Arg) =>
     },
     x,
   );
+
+export const leakyRelu = (x: Arg, alpha: number = 0.01) =>
+  memo(
+    (c: Context<ASTNode>) => {
+      const context = c.useContext(OpType.Regular);
+      const [res] = context.useVariables(`leaky_relu_result`);
+      const _x = context.gen(x);
+      let code = `let ${res} = select(${alpha} * ${v(_x)}, ${v(_x)}, ${v(_x)} > 0.0);`;
+      return context.emit("leakyRelu", res, code, OpType.Regular, _x.shape, _x);
+    },
+    (node: ASTNode, gradOut: string) => {
+      const inputVar = node.dependencies[0].variable;
+      const gradCode = `
+        let grad_${inputVar} = select(${alpha} * ${gradOut}, ${gradOut}, ${v(node.dependencies[0])} > 0.0);
+      `;
+      return {
+        code: gradCode,
+        intermediateVariables: [trimIndex(v(node.dependencies[0]))],
+      };
+    },
+    x,
+    alpha,
+  );

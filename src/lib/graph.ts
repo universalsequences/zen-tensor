@@ -165,10 +165,13 @@ export class TensorGraph {
     }
 
     // Create backward-pass kernels from each context (w/ a generated backward pass)
+    let q = 0;
     for (const context of this.contexts) {
       const backward = context.backward;
       if (!backward) continue;
 
+      console.log("initializing backpass[%s] w inputs=", q, backward.inputs, backward.code);
+      q++;
       const kernel = new Kernel(
         this.device,
         backward.code,
@@ -280,6 +283,7 @@ export class TensorGraph {
       const size = kernel.size;
       // Calculate the number of workgroups needed
       const numWorkgroups = Math.ceil(size / WORKGROUP_SIZE);
+      console.log("kernel[%s] numWorkGroups", i, numWorkgroups);
 
       // Run the current kernel with the calculated number of workgroups
       kernel.run(commandEncoder, numWorkgroups);
@@ -297,6 +301,7 @@ export class TensorGraph {
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);
         if (destBuffer) {
+          console.log("reading with destBuffer.size name=",destBuffer.size, output, destBuffer);
           const resultBuffer = this.device.createBuffer({
             size: destBuffer.size,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -313,6 +318,7 @@ export class TensorGraph {
           resultBuffer.unmap();
           resultBuffer.destroy();
           grads.set(output, resultArray);
+          console.log("grads", output, resultArray, destBuffer);
         }
       }
     }

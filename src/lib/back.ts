@@ -1,5 +1,5 @@
 import { trimIndex, v } from "./math";
-import { constructGroup } from "./utils";
+import { constructGroup, shapeToSize } from "./utils";
 import { ASTNode, intermediate, intermediateVar } from "./zen";
 
 export type BGen = (
@@ -115,7 +115,8 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       visitedInputs.add(node.variable);
       const output = `grad_${node.variable}_output`;
       outputs.push(output);
-      outputCode += `      ${output}[index] = ${node.gradientVariable};\n`;
+      console.log("outputData,", node.context.inputs, output, node);
+      outputCode += ` if (index < ${shapeToSize(node.shape)}){ ${output}[index] = ${node.gradientVariable}; } \n`;
     }
   });
 

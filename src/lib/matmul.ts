@@ -65,7 +65,7 @@ let row = index / ${N};
 let col = index % ${K};
 
 // Gradient for A
-if (index < ${M} * ${K}) {
+//if (index < ${M} * ${K}) {
   var grad_a_sum = 0.0;
   for (var n = 0u; n < ${N}; n = n + 1u) {
     let grad_out_idx = row * ${N} + n;
@@ -73,18 +73,16 @@ if (index < ${M} * ${K}) {
     grad_a_sum += ${parentGrad} * ${bVar}[b_idx];
   }
   ${node.dependencies[0].gradientVariable} = grad_a_sum;
-}
+//}
 
 // Gradient for B
-if (index < ${K} * ${N}) {
   var grad_b_sum = 0.0;
   for (var m = 0u; m < ${M}; m = m + 1u) {
-    let grad_out_idx = m * ${N} + col;
-    let a_idx = m * ${K} + row;
+    let grad_out_idx = m * ${N}; // + col;
+let a_idx = (m * ${K} + index);
     grad_b_sum += ${parentGrad} * ${aVar}[a_idx];
   }
-  ${node.dependencies[1].gradientVariable} = grad_b_sum;
-}
+${node.dependencies[1].gradientVariable} =  grad_b_sum;
       `;
       return {
         code: gradCode,
