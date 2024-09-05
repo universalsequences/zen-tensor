@@ -17,7 +17,7 @@ export const relu = (x: Arg) =>
     (node: ASTNode, gradOut: string) => {
       const inputVar = node.dependencies[0].variable;
       const gradCode = `
-        let grad_${inputVar} = select(0.0, ${gradOut}, ${v(node.dependencies[0])} > 0.0);
+        ${node.gradientVariable} = select(0.0, ${gradOut}, ${v(node.dependencies[0])} > 0.0);
       `;
       return {
         code: gradCode,
@@ -63,7 +63,7 @@ export const leakyRelu = (x: Arg, alpha: number = 0.01) =>
     (node: ASTNode, gradOut: string) => {
       const inputVar = node.dependencies[0].variable;
       const gradCode = `
-        let grad_${inputVar} = select(${alpha} * ${gradOut}, ${gradOut}, ${v(node.dependencies[0])} > 0.0);
+        ${node.gradientVariable} = select(${alpha} * ${gradOut}, ${gradOut}, ${v(node.dependencies[0])} > 0.0);
       `;
       return {
         code: gradCode,

@@ -122,7 +122,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
       // Handle broadcasting case
       const [shape1, shape2] = shapes;
       if (shape1.length === shape2.length + 1 && arraysEqual(shape1.slice(1), shape2)) {
-         // Matrix + Vector broadcasting
+        // Matrix + Vector broadcasting
         const batchSize = shape1[0];
         const vectorSize = shape2[0];
         if (i === 0) {
@@ -304,7 +304,7 @@ let ${variableName} = ${name}(${toScalar(_freq)});
         `;
         return {
           code: gradientCode,
-          intermediateVariables: [],
+          intermediateVariables: [trimIndex(v(node.dependencies[0]))],
         };
       },
       freq,

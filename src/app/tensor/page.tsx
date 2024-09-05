@@ -52,7 +52,7 @@ const TensorPage: React.FC = () => {
     Prism.highlightAll();
   }, [kernels]);
 
-  const run = useCallback(async () => {
+  const runa = useCallback(async () => {
     if (running.current) return;
     running.current = true;
     if (!navigator.gpu) {
@@ -71,7 +71,7 @@ const TensorPage: React.FC = () => {
     const inputSize = 2;
     const outputSize = 1;
     const batchSize = 4;
-    const learningRate = 0.01;
+    const learningRate = 0.1;
     const epochs = 20000;
 
     // 2. Initialize tensors
@@ -146,7 +146,7 @@ const TensorPage: React.FC = () => {
     }
   }, []);
 
-  const run33 = useCallback(async () => {
+  const run = useCallback(async () => {
     if (running.current) return;
     running.current = true;
     if (!navigator.gpu) {
@@ -165,26 +165,25 @@ const TensorPage: React.FC = () => {
     const inputSize = 2;
     const batchSize = 4;
     const outputSize = 1;
-    const hiddenSize = 32; // New hidden layer
+    const hiddenSize = 4; // New hidden layer
 
-    // XOR inputs
+    // 2. Initialize tensors
     const X = g.tensor([batchSize, inputSize], "X").set([
       0,
-      0, // XOR(0, 0)
+      0, // AND(0, 0) = 0
       0,
-      1, // XOR(0, 1)
+      1, // AND(0, 1) = 0
       1,
-      0, // XOR(1, 0)
+      0, // AND(1, 0) = 0
       1,
-      1, // XOR(1, 1)
+      1, // AND(1, 1) = 1
     ]);
 
-    // XOR expected outputs (labels)
     const Y = g.tensor([batchSize, outputSize], "Y").set([
-      0, // XOR(0, 0) -> 0
-      1, // XOR(0, 1) -> 1
-      1, // XOR(1, 0) -> 1
-      0, // XOR(1, 1) -> 0
+      0, // AND(0, 0) = 0
+      0, // AND(0, 1) = 0
+      0, // AND(1, 0) = 0
+      1, // AND(1, 1) = 1
     ]);
 
     function heInit(shape: [number, number]) {
@@ -217,8 +216,8 @@ const TensorPage: React.FC = () => {
     }
 
     // Training loop
-    const learningRate = 0.001;
-    for (let i = 0; i < 2; i++) {
+    let learningRate = 0.01;
+    for (let i = 0; i < 20000; i++) {
       const { forward, gradients } = await g.run();
 
       W1.learn(learningRate);
@@ -251,7 +250,7 @@ const TensorPage: React.FC = () => {
     }
   }, []);
 
-  const run2 = useCallback(async () => {
+  const run222 = useCallback(async () => {
     try {
       if (running.current) return;
       running.current = true;
@@ -343,7 +342,7 @@ const TensorPage: React.FC = () => {
 
       // Training loop
       const numEpochs = 10000;
-      const learningRate = 0.001;
+      const learningRate = 0.01;
 
       setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
       setBackwards(g.backpasses);
