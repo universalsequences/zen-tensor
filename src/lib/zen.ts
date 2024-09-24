@@ -48,8 +48,8 @@ export interface ASTNode {
  * Used to convert a piece of data into a scalar representation (as a codegen string)
  *
  * */
-export const toScalar = (data: ASTNode, type: DataType = DataType.Scalar, index?: string) => {
-  if (data.type === DataType.Tensor && type === DataType.Scalar) {
+export const toScalar = (data: ASTNode, index?: string) => {
+  if (data.type === DataType.Tensor) {
     if (index) {
       return `${data.variable}[${index}]`;
     } else {

@@ -216,7 +216,7 @@ const TensorPage: React.FC = () => {
     }
 
     // Training loop
-    let learningRate = 0.01;
+    let learningRate = 0.5;
     for (let i = 0; i < 20000; i++) {
       const { forward, gradients } = await g.run();
 

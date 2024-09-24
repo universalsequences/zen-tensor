@@ -4,6 +4,7 @@ import { Context } from "./context";
 import { memo } from "./memo";
 import { OpType, ASTNode, Arg, DataType } from "./zen";
 import { toScalar } from "./zen";
+import { emitIntermediate } from "./utils";
 
 const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg) =>
   memo(
@@ -32,14 +33,13 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
         code = `let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y)};`;
       } else {
         // Broadcasting for matrix + vector
-        const batchSize = shapeX[0];
         const vectorSize = shapeY[0];
         code = `
 // broadcast
-          let batchIndex = index / ${vectorSize}u;
-          let vectorIndex = index % ${vectorSize}u;
-          let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y, DataType.Scalar, "vectorIndex")};
-        `;
+let batchIndex = index / ${vectorSize}u;
+let vectorIndex = index % ${vectorSize}u;
+let ${variableName} = ${toScalar(_x)} ${op} ${toScalar(_y, "vectorIndex")};
+`;
       }
 
       return context.emit(op, variableName, code, OpType.Regular, outputShape, _x, _y);
@@ -160,6 +160,9 @@ export const sub = binaryOp("sub", "-", (node: ASTNode, gradOut: string) =>
   })),
 );
 
+/**
+ * Converts an ASTNode to the code representation needed in a backpropagation kernel
+ * */
 export const v = (a: ASTNode) =>
   a.type === DataType.Tensor ? toScalar(a) : `${intermediate(a)}[index]`;
 
@@ -214,7 +217,7 @@ export const reduce = (op: string) => (x: Arg) =>
       const code = `
     var ${variableName} = ${_x.variable}[0];
     for (var i = 1u; i < arrayLength(&${_x.variable}); i = i + 1u) {
-      ${variableName} = ${variableName} ${op} ${toScalar(_x, DataType.Scalar, "i")};
+      ${variableName} = ${variableName} ${op} ${toScalar(_x, "i")};
     }
   `;
       return reductionContext.emit(
@@ -279,7 +282,7 @@ let ${node.variable}_length = arrayLength(&${trimIndex(v(node.dependencies[0]))}
   `;
       return {
         code: gradientCode,
-        intermediateVariables: [trimIndex(v(node.dependencies[0]))],
+        intermediateVariables: emitIntermediate(node),
       };
     },
     x,
@@ -304,7 +307,7 @@ let ${variableName} = ${name}(${toScalar(_freq)});
         `;
         return {
           code: gradientCode,
-          intermediateVariables: [trimIndex(v(node.dependencies[0]))],
+          intermediateVariables: emitIntermediate(node),
         };
       },
       freq,
