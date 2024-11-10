@@ -5,6 +5,7 @@ import { memo } from "./memo";
 import { OpType, ASTNode, Arg, DataType } from "./zen";
 import { toScalar } from "./zen";
 import { emitIntermediate } from "./utils";
+import { getShape } from "./reshape";
 
 const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg) =>
   memo(
@@ -13,8 +14,8 @@ const binaryOp = (name: string, op: string, backwards: BGen) => (x: Arg, y: Arg)
       const [variableName] = context.useVariables(`${name}_result`);
       const _x = context.gen(x);
       const _y = context.gen(y);
-      const shapeX = _x.shape;
-      const shapeY = _y.shape;
+      const shapeX = getShape(_x); //.shape;
+      const shapeY = getShape(_y); //.shape;
       let outputShape: number[];
 
       if (arraysEqual(shapeX, shapeY)) {
@@ -78,7 +79,7 @@ const grad = (
   let code = "";
   let intermediateVariables: string[] = [];
   const visited = new Set<string>();
-  const shapes = node.dependencies.map((dep) => dep.shape);
+  const shapes = node.dependencies.map((dep) => getShape(dep));
   const isBroadcasting =
     shapes[0].length !== shapes[1].length || !arraysEqual(shapes[0], shapes[1]);
 
@@ -208,87 +209,11 @@ export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
   }),
 );
 
-export const reduce = (op: string) => (x: Arg) =>
-  memo(
-    (context: Context<ASTNode>): ASTNode => {
-      const reductionContext = context.useContext(OpType.Reduction);
-      const [variableName] = reductionContext.useVariables(`reduce_result`);
-      const _x = reductionContext.gen(x);
-      const code = `
-    var ${variableName} = ${_x.variable}[0];
-    for (var i = 1u; i < arrayLength(&${_x.variable}); i = i + 1u) {
-      ${variableName} = ${variableName} ${op} ${toScalar(_x, "i")};
-    }
-  `;
-      return reductionContext.emit(
-        `reduce.${op}`,
-        variableName,
-        code,
-        OpType.Reduction,
-        _x.shape,
-        _x,
-      );
-    },
-    (node: ASTNode) => {
-      const inputVar = node.dependencies[0].gradientVariable;
-      const gradientCode = `
-    ${inputVar} += 1;
-  `;
-      return {
-        code: gradientCode,
-        intermediateVariables: [],
-      };
-    },
-    x,
-  );
-
-export const sum = reduce("+");
-
-export const mean = (x: Arg) =>
-  memo(
-    (context: Context<ASTNode>): ASTNode => {
-      const reductionContext = context.useContext(OpType.Reduction);
-      const _x = reductionContext.gen(x);
-      //const [sumVariable] = reductionContext.useVariables(`mean_sum`);
-      //const [countVariable] = reductionContext.useVariables(`mean_count`);
-      const [resultVariable] = reductionContext.useVariables(`mean_result`);
-      const sumVariable = `${resultVariable}_sum`;
-      const countVariable = `${resultVariable}_count`;
-
-      const code = `
-var ${sumVariable} = 0.0;
-var ${countVariable} = 0u;
-for (var i = 0u; i < arrayLength(&${_x.variable}); i = i + 1u) {
-  ${sumVariable} = ${sumVariable} + ${_x.variable}[i];
-  ${countVariable} = ${countVariable} + 1u;
-}
-let ${resultVariable} = ${sumVariable} / f32(${countVariable});
-`;
-
-      return reductionContext.emit(
-        "reduce.mean",
-        resultVariable,
-        code,
-        OpType.Reduction,
-        _x.shape,
-        _x,
-      ); // Mean always outputs a single value
-    },
-    (node: ASTNode) => {
-      const inputVar = node.dependencies[0].gradientVariable; // This is the gradient variable corresponding to the input of the sum operation
-      const gradientCode = `
-let ${node.variable}_length = arrayLength(&${trimIndex(v(node.dependencies[0]))});  // Total number of elements in x
-    ${inputVar} += 1 / f32(${node.variable}_length);
-  `;
-      return {
-        code: gradientCode,
-        intermediateVariables: emitIntermediate(node),
-      };
-    },
-    x,
-  );
-
-export const func = (name: string, derivative: string) => {
+export const func = (
+  name: string,
+  forward: (x: string) => string,
+  derivative: (x: string) => string,
+) => {
   return (freq: Arg) => {
     return memo(
       (context: Context<ASTNode>): ASTNode => {
@@ -296,14 +221,14 @@ export const func = (name: string, derivative: string) => {
         const [variableName] = context.useVariables(`${name}_result`);
         const _freq = context.gen(freq);
         const code = `
-let ${variableName} = ${name}(${toScalar(_freq)});
+let ${variableName} = ${forward(toScalar(_freq))};
   `;
-        return context.emit(name, variableName, code, OpType.Regular, _freq.shape, _freq);
+        return context.emit(name, variableName, code, OpType.Regular, getShape(_freq), _freq);
       },
       (node: ASTNode, gradOut: string) => {
         const inputVar = node.dependencies[0].variable;
         const gradientCode = `
-          let grad_${inputVar} = ${gradOut} * ${derivative}(${inputVar});
+let grad_${inputVar} = ${gradOut} * ${derivative(toScalar(node.dependencies[0]))};
         `;
         return {
           code: gradientCode,
@@ -315,5 +240,18 @@ let ${variableName} = ${name}(${toScalar(_freq)});
   };
 };
 
-export const sine = func("sin", "cos"); // sin'(x) = cos(x)
-export const log2 = func("log2", "1.0 / (x * log(2.0))"); // d/dx(log2(x)) = 1 / (x * log(2))
+export const sqrt = func(
+  "sqrt",
+  (x: string) => `sqrt(${x})`,
+  (x: string) => `0.5 / sqrt(${x})`,
+);
+export const pow2 = func(
+  "pow2",
+  (x: string) => `pow(${x}, 2)`,
+  (x: string) => `2.0 * ${x}`,
+); // For x^2
+export const pow3 = func(
+  "pow3",
+  (x: sttring) => `pow(${x}, 3)`,
+  (x: string) => `3.0 * pow(${x}, 2)`,
+); // For x^3

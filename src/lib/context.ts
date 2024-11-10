@@ -43,6 +43,8 @@ export type Context<T> = BaseContext<T> & {
   getInputs: () => string[];
   getOutputs: () => string[];
   lazyInputs: string[];
+
+  lazyInputShapes: Map<string, number[]>;
   evalLazyInputs: () => void;
   nodes: ASTNode[];
   size: number;
@@ -109,12 +111,19 @@ export class KernelContext implements Context<ASTNode> {
 
     const result = (x as Gen)(this);
 
+    if (result.variable === "div_result11") {
+      console.log("were handling div_result11!", result);
+    }
+
     if (result.opType === OpType.Reshape) {
       return result;
     }
 
     const children = this.getAllChildren();
 
+    if (result.variable === "div_result11") {
+      console.log("were handling div_result11!", children, [...this.usedVariables]);
+    }
     if (
       !this.usedVariables.includes(result.variable) &&
       children.some((p) => p.usedVariables.includes(result.variable))
@@ -124,6 +133,10 @@ export class KernelContext implements Context<ASTNode> {
       this.lazyInputShapes.set(result.variable, result.shape);
       result.variable += "_intermediate";
       result.type = DataType.Tensor;
+
+      if (result.variable === "div_result11") {
+        console.log("adding intermediate to were handling div_result11!");
+      }
     }
 
     return result;
@@ -208,7 +221,8 @@ export class KernelContext implements Context<ASTNode> {
       .map(([name, index]) => constructGroup(this.inputs.size + index, "read_write", name))
       .join("\n");
 
-    const code = this.code
+    console.log("generating kernel", this, this.code);
+    const code = Array.from(new Set(this.code))
       .filter((x) => x !== "")
       .flatMap((c) => c.split("\n"))
       .map((x) => "        " + x)

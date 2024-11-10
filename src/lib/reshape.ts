@@ -1,5 +1,6 @@
 import { Arg, OpType, ASTNode } from "./zen";
 import { Context } from "./context";
+import { memo } from "./memo";
 
 export const reshape =
   (input: Arg, newShape: number[]) =>
@@ -11,24 +12,29 @@ export const reshape =
     };
   };
 
-export const transpose = (input: Arg) => {
-  return (context: Context<ASTNode>): ASTNode => {
-    const _input = context.gen(input, true);
+export const transpose =
+  (input: Arg) =>
+  (context: Context<ASTNode>): ASTNode => {
+    const _input = context.gen(input);
+    console.log("transposing input =", _input.variable, _input, context);
+    if (_input.variable.endsWith("_intermediate")) {
+      const variable = _input.variable.slice(0, _input.variable.length - "_intermediate".length);
+      context.lazyInputs.push(variable);
+      context.lazyInputShapes.set(variable, _input.shape);
+    }
     return {
       ..._input,
-      shape: [input.shape[1], input.shape[0]],
-      transposed: _input.transposed ? false : true,
-      opType: OpType.Reshape,
+      transposed: true,
+      opType: OpType.Regular,
     };
   };
-};
 
 /**
  * buffer: [0, 0, 0, 1, 1, 1] (w/ shape [3,2]) accessed originally as [0,0,0],[1,1,1]
  * transposed: [[0, 0, 0], [1, 1, 1]] (shape: [3,2])-> [[0, 1], [0, 1], [0,1]] (shape: [2,3])
  *
  * */
-export const accessIndex = (node: ASTNode, row: string, col: string) => {
+export const getIndex = (node: ASTNode, row: string, col: string) => {
   const [rows, cols] = getShape(node);
   if (node.transposed) {
     return `${col} * ${rows} + ${row}`;

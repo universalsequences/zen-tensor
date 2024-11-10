@@ -14,12 +14,9 @@ import {
   reshape,
   add,
   matmul,
-  reduce,
   mult,
-  mean,
   sub,
   sine,
-  sum,
   div,
   binaryCrossEntropy,
   sigmoid,
@@ -34,6 +31,7 @@ import { circleClassifier } from "@/examples/circle";
 import { shapeClassifier } from "@/examples/shape";
 import { shapeNoiseClassifier } from "@/examples/shape-noise";
 import { stripesClassifier } from "@/examples/spiral";
+import { scaleClassifier } from "@/examples/circleBatchNN";
 
 const bin = (predictions: number[], targets: Float32Array) => {
   return predictions.map((p, i) => {
@@ -168,14 +166,16 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = andPredictor(g);
+    const epochRunner = scaleClassifier(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);
 
     for (let i = 0; i < 10000; i++) {
-      const { computation, loss, tensors, gradients, forward, predicition } =
+      const a = new Date().getTime();
+      const { learningTime, computation, loss, tensors, gradients, forward, predicition } =
         await epochRunner(0.01);
+      const b = new Date().getTime();
       if (computation) {
         setComputation(computation);
       }
@@ -183,6 +183,7 @@ const TensorPage: React.FC = () => {
       if (i % 10 !== 0) {
         continue;
       }
+      console.log("epoch took %s ms learning took %s ms ", b - a, learningTime);
       setTensors(tensors);
       setEpoch(i);
       setLoss(loss);
@@ -507,11 +508,12 @@ const TensorPage: React.FC = () => {
                 <pre
                   style={{ backgroundColor: "#18181b" }}
                   key={i}
-                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 "
+                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 relative "
                 >
                   <code style={{ fontSize: 11 }} className="language-wgsl">
                     {code}
                   </code>
+                  <div className="absolute bottom-2 right-2 text-xs">kernel #{i + 1}</div>
                 </pre>
               ))}
             </div>

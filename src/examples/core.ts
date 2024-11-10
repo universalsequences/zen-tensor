@@ -1,4 +1,4 @@
-import { Tensor, NodeGen, TensorGraph } from "@/lib";
+import { Tensor, NodeGen, TensorGraph, ASTNode } from "@/lib";
 
 export interface EpochResult {
   loss: number;
@@ -7,6 +7,7 @@ export interface EpochResult {
   forward: Float32Array;
   predicition: number[] | undefined;
   computation: ASTNode | undefined;
+  learningTime: number;
 }
 
 export const executeEpoch =
@@ -21,9 +22,11 @@ export const executeEpoch =
   }) =>
   async (learningRate: number): Promise<EpochResult> => {
     const { forward, gradients } = await graph.run();
+    let a = new Date().getTime();
     for (const tensor of tensors) {
       tensor.learn(learningRate);
     }
+    let b = new Date().getTime();
     const tensorResults = new Map<string, Float32Array>();
     for (const [key, tensor] of graph.tensors.entries()) {
       tensorResults.set(key, tensor.val());
@@ -43,6 +46,7 @@ export const executeEpoch =
       gradients,
       predicition: predictionResult,
       computation: predictions.node,
+      learningTime: b - a,
     };
   };
 

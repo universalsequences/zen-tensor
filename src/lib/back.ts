@@ -1,4 +1,5 @@
 import { trimIndex, v } from "./math";
+import { getShape } from "./reshape";
 import { constructGroup, shapeToSize } from "./utils";
 import { ASTNode, intermediate, intermediateVar } from "./zen";
 
@@ -58,13 +59,19 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     // Generate the backpropagation code for the current node
     if (node.backprop) {
       const re = node.backprop(gradOut);
-      if (
-        re.code.includes("grad_tensor_0 += grad_mult_result1 * add_result1_intermediate[index];")
-      ) {
-      }
       const { code: backpropCode, intermediateVariables } = re;
       if (intermediateVariables) {
-        inputs.push(...intermediateVariables);
+        console.log(
+          "adding intermediate variables for backdropCode",
+          backpropCode,
+          intermediateVariables,
+        );
+        for (let inter of intermediateVariables) {
+          if (!inputs.includes(inter)) {
+            inputs.push(inter);
+          }
+        }
+        //inputs.push(...intermediateVariables);
       }
       if (backpropCode.includes(intermediate(node))) {
         inputs.push(intermediate(node));
@@ -97,7 +104,10 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     (initializations.includes(trimIndex(gradInit)) || backwardCode.includes(trimIndex(gradInit)))
   ) {
     if (!initializations.includes(trimIndex(gradInit) + "=")) {
-      inputs.push(trimIndex(gradInit));
+      const trimmedGradInit = trimIndex(gradInit);
+      if (!inputs.includes(trimmedGradInit)) {
+        inputs.push(trimmedGradInit);
+      }
     }
   }
 
@@ -115,8 +125,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       visitedInputs.add(node.variable);
       const output = `grad_${node.variable}_output`;
       outputs.push(output);
-      console.log("outputData,", node.context.inputs, output, node);
-      outputCode += ` if (index < ${shapeToSize(node.shape)}){ ${output}[index] = ${node.gradientVariable}; } \n`;
+      outputCode += ` if (index < ${shapeToSize(getShape(node))}){ ${output}[index] = ${node.gradientVariable}; } \n`;
     }
   });
 

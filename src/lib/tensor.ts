@@ -143,6 +143,26 @@ export class Tensor {
   }
 
   gen(): Gen {
+    // every context that this is run in should add itself to the inputs there
+
+    return (context: Context<ASTNode>) => {
+      context.addInput(this.name);
+
+      const node = {
+        ...context.emit(
+          extractName(this.name) || "tensor",
+          this.name,
+          "",
+          OpType.Regular,
+          this.shape,
+        ),
+        type: DataType.Tensor,
+      };
+      node.backprop = () => ({ code: "", intermediateVariables: [] });
+      return node;
+    };
+
+    /*
     return memo(
       (context: Context<ASTNode>) => {
         context.addInput(this.name);
@@ -159,6 +179,7 @@ export class Tensor {
       },
       () => ({ code: "", intermediateVariables: [] }),
     );
+    */
   }
 }
 

@@ -2,16 +2,21 @@ import { memo } from "./memo";
 import { Context } from "./context";
 import { OpType, ASTNode, Arg, toScalar } from "./zen";
 import { emitIntermediate } from "./utils";
+import { getIndex, getShape } from "./reshape";
+import { trimIndex } from "./math";
 
 export const matmul = (a: Arg, b: Arg) =>
   memo(
+    // Forward Pass
     (context: Context<ASTNode>): ASTNode => {
-      // Forward Pass
       context = context.useContext(OpType.Reduction);
       const _a = context.gen(a);
       const _b = context.gen(b);
-      const shapeA = _a.shape;
-      const shapeB = _b.shape;
+      const shapeA = getShape(_a); //.shape;
+      const shapeB = getShape(_b); //.shape;
+      console.log("mat mul _a and _b", _a, _b);
+      console.log("shapeA", shapeA, _a);
+      console.log("shapeB", shapeB);
       // Check if shapes are compatible for matrix multiplication
       if (shapeA.length !== 2 || shapeB.length !== 2 || shapeA[1] !== shapeB[0]) {
         throw new Error(`Incompatible shapes for matrix multiplication: ${shapeA} and ${shapeB}`);
@@ -41,10 +46,13 @@ for (var k = 0u; k < ${K}; k = k + 1u) {
 }
 let ${resultVar} = ${sum};
       `;
+      if (sum === "sum_matmul13") {
+        console.log("emitting sum matmul 13 wth _a and _b", _a, _b, resultVar, code, context);
+      }
       return context.emit("matmul", resultVar, code, OpType.Reduction, outputShape, _a, _b);
     },
+    // Back Propagation
     (node: ASTNode, gradOut: string) => {
-      // Backwards Pass
       const [M, N, K] = [
         `${node.gradientVariable}_M`,
         `${node.gradientVariable}_N`,
@@ -61,9 +69,9 @@ let ${resultVar} = ${sum};
       const aVar = node.dependencies[0].variable;
       const bVar = node.dependencies[1].variable;
       const gradCode = `
-let ${M} = ${node.dependencies[0].shape[0]}u;
-let ${N} = ${node.dependencies[1].shape[1]}u;
-let ${K} = ${node.dependencies[0].shape[1]}u;
+let ${M} = ${getShape(node.dependencies[0])[0]}u;
+let ${N} = ${getShape(node.dependencies[1])[1]}u;
+let ${K} = ${getShape(node.dependencies[0])[1]}u;
 let row = index / ${N};
 let col = index % ${K};
 
@@ -71,7 +79,7 @@ let col = index % ${K};
 var grad_a_sum = 0.0;
 for (var n = 0u; n < ${N}; n = n + 1u) {
   let grad_out_idx = row * ${N} + n;
-  let b_idx = col * ${N} + n;
+  let b_idx = ${getIndex(node.dependencies[1], "col", "n")};
   grad_a_sum += ${parentGrad} * ${bVar}[b_idx];
 }
 ${node.dependencies[0].gradientVariable} = grad_a_sum;
@@ -79,15 +87,21 @@ ${node.dependencies[0].gradientVariable} = grad_a_sum;
 // Gradient for B
 var grad_b_sum = 0.0;
 for (var m = 0u; m < ${M}; m = m + 1u) {
-  let grad_out_idx = m * ${N}; // + col;
-  let a_idx = (m * ${K} + index);
+  let grad_out_idx = m * ${N};
+  let a_idx = ${getIndex(node.dependencies[0], "m", "index")};
   grad_b_sum += ${parentGrad} * ${aVar}[a_idx];
 }
 ${node.dependencies[1].gradientVariable} =  grad_b_sum;
 `;
+      const intermediateVariables =
+        node.parent?.context !== node.context
+          ? Array.from(
+              new Set([parentGrad.slice(0, parentGrad.indexOf("[")), ...emitIntermediate(node)]),
+            )
+          : emitIntermediate(node);
       return {
         code: gradCode,
-        intermediateVariables: emitIntermediate(node),
+        intermediateVariables: intermediateVariables, //emitIntermediate(node),
       };
     },
     a,

@@ -51,7 +51,7 @@ export interface ASTNode {
  * */
 export const toScalar = (data: ASTNode, index?: string) => {
   if (data.type === DataType.Tensor) {
-    if (index) {
+    if (index !== undefined) {
       return `${data.variable}[${index}]`;
     } else {
       return `${data.variable}[index]`;

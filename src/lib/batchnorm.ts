@@ -1,51 +1,35 @@
-import { Context } from "./context";
-import { trimIndex, v } from "./math";
-import { memo } from "./memo";
-import { emitIntermediate } from "./utils";
-import { Arg, ASTNode, DataType, intermediate, OpType, toScalar } from "./zen";
-import { matmul, div, sub, add, mult } from "./index";
+import { pow2, sqrt } from "./math";
+import { Arg, ASTNode } from "./zen";
+import { matmul, div, Context, sub, add, mult, transpose, getShape } from "./index";
 import { constant } from "./constant";
 
 const epsilon = 0.0001;
 export const batchNorm = (x: Arg, gamma: Arg, beta: Arg) => {
-  // Let's say our core operators are:
-  // matmul, add, mult (element-wise multiplication),
-  // div (element-wise division), sub (element-wise subtraction)
-  // sum (across specified axis)
+  return (context: Context<ASTNode>) => {
+    const _x = context.gen(x);
+    const _gamma = context.gen(gamma);
+    const _beta = context.gen(beta);
+    const xShape = getShape(_x);
+    const gammaShape = getShape(_gamma);
+    const betaShape = getShape(_beta);
+    const batchSize = xShape[0];
+    const featureSize = xShape[1];
 
-  // For mean: we need to sum across batch dimension and divide by batch size
-  // If we have a ones vector of shape [batchSize, 1], we can use matmul to sum
-  const batchSize = x.shape[0];
-  const ones = constant([batchSize, 1], 1);
+    // Validate gamma and beta shapes
+    if (gammaShape[1] !== featureSize || betaShape[1] !== featureSize) {
+      throw new Error(`Gamma and beta must have shape [1, ${featureSize}]`);
+    }
 
-  // Mean = (1/N) * sum(x) for each feature
-  // matmul with ones sums across batch dimension
-  const mean = div(matmul(transpose(x), ones), batchSize);
-
-  // For variance: (x - mean)^2
-  // First broadcast mean to same shape as x
-  const broadcastMean = matmul(ones, transpose(mean));
-  const variance = div(matmul(transpose(pow(sub(x, broadcastMean), 2)), ones), batchSize);
-
-  // Normalize: (x - mean) / sqrt(var + eps)
-  const normalized = div(sub(x, broadcastMean), sqrt(add(variance, epsilon)));
-
-  // Scale and shift
-  return add(mult(normalized, gamma), beta);
+    const onesB = constant([batchSize, 1], 1);
+    const epsilonConstant = constant([batchSize, featureSize], epsilon);
+    const mean = div(matmul(transpose(x), onesB), batchSize);
+    const broadcastMean = matmul(onesB, transpose(mean));
+    const diffSquared = pow2(sub(x, broadcastMean));
+    const variance = div(matmul(transpose(diffSquared), onesB), batchSize);
+    const broadcastVar = matmul(onesB, transpose(variance));
+    const normalized = div(sub(x, broadcastMean), sqrt(add(broadcastVar, epsilonConstant)));
+    const broadcastGamma = matmul(onesB, gamma);
+    const broadcastBeta = matmul(onesB, beta);
+    return add(mult(normalized, broadcastGamma), broadcastBeta)(context);
+  };
 };
-
-/*
-However, this highlights that we might be missing some core operators that would make this more efficient:
-
-1. We need broadcasting capability
-2. We need elementwise power/square
-3. We need sum across specific dimensions
-4. We need sqrt
-
-Would you like me to:
-1. List out what core operators we'd need to add to make this work efficiently?
-2. Show alternative implementations using different sets of core operators?
-3. Break down which parts of BatchNorm require which types of operations?
-
-The exact implementation would depend on what core operators are available in your framework. What operators do you currently have available?����������������
-*/
