@@ -22,6 +22,7 @@ export class TensorGraph {
   outputSize: number = 0;
   outputShape: number[] = [1];
   backpasses: string[] = [];
+  tensors: Map<string, Tensor> = new Map();
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -32,6 +33,7 @@ export class TensorGraph {
     const size = shape.reduce((a, b) => a * b, 1);
     const placeholder = new Tensor(tensorName, this, shape);
     this.inputData.set(tensorName, new Float32Array(size));
+    this.tensors.set(name, placeholder);
     return placeholder;
   }
 
@@ -170,7 +172,6 @@ export class TensorGraph {
       const backward = context.backward;
       if (!backward) continue;
 
-      console.log("initializing backpass[%s] w inputs=", q, backward.inputs, backward.code);
       q++;
       const kernel = new Kernel(
         this.device,
@@ -256,17 +257,6 @@ export class TensorGraph {
               const destBuffer = kernel.getInputBuffer(inputName)!;
               let len = this.inputData.get(inputName)?.length || this.outputSize;
 
-              if (sourceBuffer.size !== destBuffer.size) {
-                console.log(
-                  "SIZE CONFLICT!",
-                  inputName,
-                  sourceBuffer,
-                  destBuffer,
-                  kernel,
-                  kernels[j],
-                );
-              }
-
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
                 0,
@@ -283,7 +273,6 @@ export class TensorGraph {
       const size = kernel.size;
       // Calculate the number of workgroups needed
       const numWorkgroups = Math.ceil(size / WORKGROUP_SIZE);
-      console.log("kernel[%s] numWorkGroups", i, numWorkgroups);
 
       // Run the current kernel with the calculated number of workgroups
       kernel.run(commandEncoder, numWorkgroups);
@@ -301,7 +290,6 @@ export class TensorGraph {
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);
         if (destBuffer) {
-          console.log("reading with destBuffer.size name=",destBuffer.size, output, destBuffer);
           const resultBuffer = this.device.createBuffer({
             size: destBuffer.size,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -318,7 +306,6 @@ export class TensorGraph {
           resultBuffer.unmap();
           resultBuffer.destroy();
           grads.set(output, resultArray);
-          console.log("grads", output, resultArray, destBuffer);
         }
       }
     }

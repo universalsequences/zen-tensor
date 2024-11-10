@@ -44,7 +44,7 @@ export class Tensor {
     return this;
   }
 
- sub(factor: number) {
+  sub(factor: number) {
     let val = this.val();
     if (val) {
       for (let i = 0; i < val.length; i++) {
@@ -53,8 +53,6 @@ export class Tensor {
     }
     return this;
   }
-
-
 
   grad() {
     return this.graph.gradientData.get(this.name)!;

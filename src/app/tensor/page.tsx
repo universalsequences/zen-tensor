@@ -27,6 +27,13 @@ import {
   leakyRelu,
 } from "@/lib/index"; // Adjust the import path as needed
 import { printAST } from "@/lib/print";
+import { andPredictor } from "@/examples/and";
+import { xorPredictor } from "@/examples/xor";
+import { digitClassifier } from "@/examples/mnist";
+import { circleClassifier } from "@/examples/circle";
+import { shapeClassifier } from "@/examples/shape";
+import { shapeNoiseClassifier } from "@/examples/shape-noise";
+import { stripesClassifier } from "@/examples/spiral";
 
 const bin = (predictions: number[], targets: Float32Array) => {
   return predictions.map((p, i) => {
@@ -146,6 +153,46 @@ const TensorPage: React.FC = () => {
     }
   }, []);
 
+  const runAND = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    if (!navigator.gpu) {
+      throw new Error("WebGPU not supported on this browser.");
+    }
+
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error("No appropriate GPUAdapter sounds");
+    }
+
+    const device = await adapter.requestDevice();
+    const g = new TensorGraph(device);
+
+    const epochRunner = andPredictor(g);
+
+    setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
+    setBackwards(g.backpasses);
+
+    for (let i = 0; i < 10000; i++) {
+      const { computation, loss, tensors, gradients, forward, predicition } =
+        await epochRunner(0.01);
+      if (computation) {
+        setComputation(computation);
+      }
+
+      if (i % 10 !== 0) {
+        continue;
+      }
+      setTensors(tensors);
+      setEpoch(i);
+      setLoss(loss);
+      if (predicition) {
+        setResult(predicition);
+      }
+      setGrads(gradients);
+    }
+  }, []);
+
   const run = useCallback(async () => {
     if (running.current) return;
     running.current = true;
@@ -216,7 +263,7 @@ const TensorPage: React.FC = () => {
     }
 
     // Training loop
-    let learningRate = 0.5;
+    let learningRate = 0.01;
     for (let i = 0; i < 20000; i++) {
       const { forward, gradients } = await g.run();
 
@@ -392,7 +439,7 @@ const TensorPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    run();
+    runAND();
   }, []);
 
   const _grads: { [x: string]: Float32Array } = {};

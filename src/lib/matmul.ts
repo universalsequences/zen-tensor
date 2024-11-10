@@ -1,7 +1,6 @@
-import { trimIndex, v } from "./math";
 import { memo } from "./memo";
 import { Context } from "./context";
-import { OpType, ASTNode, Arg, DataType, toScalar } from "./zen";
+import { OpType, ASTNode, Arg, toScalar } from "./zen";
 import { emitIntermediate } from "./utils";
 
 export const matmul = (a: Arg, b: Arg) =>

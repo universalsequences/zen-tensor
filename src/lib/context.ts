@@ -47,6 +47,7 @@ export type Context<T> = BaseContext<T> & {
   nodes: ASTNode[];
   size: number;
   shape?: number[];
+  tensorGraph: TensorGraph;
 };
 
 /**
