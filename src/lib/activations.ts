@@ -126,3 +126,31 @@ for (var i = 0u; i < ${len}u; i++) {
     },
     input,
   );
+
+export const tanh = (x: Arg) =>
+  memo(
+    (c: Context<ASTNode>) => {
+      const context = c.useContext(OpType.Regular);
+      const [res] = context.useVariables(`tanh_result`);
+      const _x = context.gen(x);
+      let code = `
+        let exp2x = exp(2.0 * ${v(_x)});
+        let ${res} = (exp2x - 1.0) / (exp2x + 1.0);
+      `;
+      return context.emit("tanh", res, code, OpType.Regular, getShape(_x), _x);
+    },
+    (node: ASTNode, gradOut: string) => {
+      // d/dx tanh(x) = 1 - tanh²(x)
+      const inputVar = node.dependencies[0].variable;
+      const gradCode = `
+        let exp2x_${inputVar} = exp(2.0 * ${v(node.dependencies[0])});
+        let tanh_${inputVar} = (exp2x_${inputVar} - 1.0) / (exp2x_${inputVar} + 1.0);
+        ${node.gradientVariable} = ${gradOut} * (1.0 - tanh_${inputVar} * tanh_${inputVar});
+      `;
+      return {
+        code: gradCode,
+        intermediateVariables: emitIntermediate(node),
+      };
+    },
+    x,
+  );

@@ -1,5 +1,5 @@
 import { TensorGraph, add, matmul, relu, binaryCrossEntropy, sigmoid, leakyRelu } from "@/lib";
-import { executeEpoch } from "./core";
+import { executeEpoch, heInit } from "./core";
 import { batchNorm } from "@/lib/batchnorm";
 
 // learning rate -> 0.1 actually works!
@@ -23,7 +23,7 @@ export const xorPredictor = (g: TensorGraph) => {
   const Y = g.tensor([batchSize, outputSize], "Y").set([0, 1, 1, 0]);
 
   // Custom initialization to force different patterns
-  const W1 = g.tensor([inputSize, hiddenSize], "W1").set([
+  const W1 = g.tensor([inputSize, hiddenSize], "W1").set(heInit([inputSize, hiddenSize], 3)); /*[
     // First input connections
     ...Array(hiddenSize / 2).fill(3), // Strong positive for first half
     ...Array(hiddenSize / 2).fill(-3), // Strong negative for second half
@@ -31,6 +31,7 @@ export const xorPredictor = (g: TensorGraph) => {
     ...Array(hiddenSize / 2).fill(-3), // Opposite pattern for second input
     ...Array(hiddenSize / 2).fill(3),
   ]);
+  */
 
   const gamma1 = g.tensor([1, hiddenSize], "gamma1").fill(1);
   const beta1 = g.tensor([1, hiddenSize], "beta1").set(

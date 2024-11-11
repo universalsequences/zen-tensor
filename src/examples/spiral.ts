@@ -61,8 +61,8 @@ export const stripesClassifier = (g: TensorGraph) => {
   // Network with BatchNorm
   const W1 = g.tensor([inputSize, hiddenSize], "W1").set(heInit([inputSize, hiddenSize], 2.0));
   const b1 = g.tensor([hiddenSize], "b1").fill(0);
-  const gamma1 = g.tensor([hiddenSize], "gamma1").fill(1); // BatchNorm scale
-  const beta1 = g.tensor([hiddenSize], "beta1").fill(0); // BatchNorm shift
+  const gamma1 = g.tensor([1, hiddenSize], "gamma1").fill(1); // BatchNorm scale
+  const beta1 = g.tensor([1, hiddenSize], "beta1").fill(0); // BatchNorm shift
 
   const W2 = g.tensor([hiddenSize, outputSize], "W2").set(heInit([hiddenSize, outputSize]));
   const b2 = g.tensor([outputSize], "b2").fill(0);

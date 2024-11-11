@@ -1,6 +1,7 @@
 import { Context } from "./context";
 import { trimIndex, v } from "./math";
 import { memo } from "./memo";
+import { emitIntermediate } from "./utils";
 import { Arg, ASTNode, intermediate, OpType } from "./zen";
 
 const epsilon = 1e-7; // Small value to prevent log(0)
@@ -63,4 +64,37 @@ ${gradActualCode}
     },
     predicted,
     actual,
+  );
+
+export const meanSquaredError = (predictions: Arg, targets: Arg) =>
+  memo(
+    (context: Context<ASTNode>): ASTNode => {
+      context = context.useContext(OpType.Reduction);
+      const _pred = context.gen(predictions);
+      const _targets = context.gen(targets);
+      const [result] = context.useVariables("mse_result");
+
+      const code = `
+        let diff = ${v(_pred)} - ${v(_targets)};
+        let ${result} = diff * diff;
+      `;
+
+      return context.emit("mse", result, code, OpType.Reduction, _pred.shape, _pred, _targets);
+    },
+    (node: ASTNode, gradOut: string) => {
+      const gradCode = `
+        ${node.gradientVariable} = 2.0 * (${v(node.dependencies[0])} - ${v(node.dependencies[1])}) * ${gradOut};
+      `;
+      return {
+        code: gradCode,
+        intermediateVariables: [
+          trimIndex(v(node.dependencies[0])),
+          trimIndex(v(node.dependencies[1])),
+        ],
+
+        //intermediateVariables: //emitIntermediate(node),
+      };
+    },
+    predictions,
+    targets,
   );

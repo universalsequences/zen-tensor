@@ -71,9 +71,6 @@ export const shapeClassifier = (g: TensorGraph) => {
   const logits = add(matmul(hidden, W2), b2);
   const predictions = sigmoid(logits);
 
-  console.log("Initial predictions:", predictions.data);
-  console.log("Logits:", logits.data);
-
   const loss = g.output(binaryCrossEntropy(predictions, Y));
   g.compile(loss, [batchSize]);
 
@@ -81,6 +78,5 @@ export const shapeClassifier = (g: TensorGraph) => {
     tensors: [W1, b1, W2, b2],
     graph: g,
     predictions,
-    learningRate: 0.1, // Same as MNIST
   });
 };

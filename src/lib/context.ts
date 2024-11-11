@@ -7,6 +7,7 @@ import { numberOp } from "./number";
 
 let contextIdx = 1;
 
+// DO NOT CHANGE -- WEIGHTS STOP TO UPDATE IF YOU DO. I KNOW THIS LIMITS KERNEL FUSION BUT WILL NEED TO BE WAY SMARTER TO DO THAT
 const MAX_BUFFERS = 2;
 
 export interface BaseContext<T> {
