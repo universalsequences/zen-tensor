@@ -25,7 +25,6 @@ export class Kernel {
     nodes: ASTNode[],
   ) {
     this.size = size;
-    console.log("KERNEL size=", size, outputs, intermediates);
     this.inputs = inputs;
     this.outputs = outputs;
     this.inputBuffers = new Map(inputBuffers);
@@ -57,7 +56,6 @@ export class Kernel {
       });
     });
 
-    console.log("nodes=", nodes, intermediates);
     // Add intermediate buffer layout entries
     intermediates.forEach((name, index) => {
       bindGroupLayoutEntries.push({
@@ -89,7 +87,6 @@ export class Kernel {
     // Add input bindings
     inputs.forEach((name, index) => {
       const buffer = this.inputBuffers.get(name);
-      console.log("setting input=%s for kernel", name, buffer, this);
       entries.push({
         binding: index,
         resource: { buffer: buffer! },
@@ -103,9 +100,7 @@ export class Kernel {
           `${x.gradientVariable}_intermediate_output` === name ||
           `${x.gradientVariable}_output` === name,
       );
-      console.log("output nodes=%s", name, node, outputs, nodes, size);
       const _size = node?.shape ? shapeToSize(node.shape) : size;
-      console.log("size determined for output=%s", name, _size);
       const buffer = device.createBuffer({
         size: _size * Float32Array.BYTES_PER_ELEMENT, // Assuming max size, adjust as needed
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
@@ -147,7 +142,7 @@ export class Kernel {
     const passEncoder = commandEncoder.beginComputePass();
     passEncoder.setPipeline(this.pipeline);
     passEncoder.setBindGroup(0, this.bindGroup);
-    passEncoder.dispatchWorkgroups(numWorkgroups, 1,1);
+    passEncoder.dispatchWorkgroups(numWorkgroups, 1, 1);
     passEncoder.end();
   }
 

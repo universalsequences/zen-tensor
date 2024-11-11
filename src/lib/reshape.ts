@@ -1,4 +1,4 @@
-import { Arg, OpType, ASTNode } from "./zen";
+import { Arg, OpType, ASTNode, NodeGen } from "./zen";
 import { Context } from "./context";
 import { memo } from "./memo";
 
@@ -12,9 +12,8 @@ export const reshape =
     };
   };
 
-export const transpose =
-  (input: Arg) =>
-  (context: Context<ASTNode>): ASTNode => {
+export const transpose = (input: Arg) => {
+  const nodeGen = (context: Context<ASTNode>): ASTNode => {
     const _input = context.gen(input);
     console.log("transposing input =", _input.variable, _input, context);
     if (_input.variable.endsWith("_intermediate")) {
@@ -22,12 +21,16 @@ export const transpose =
       context.lazyInputs.push(variable);
       context.lazyInputShapes.set(variable, _input.shape);
     }
-    return {
+    const node = {
       ..._input,
       transposed: true,
       opType: OpType.Regular,
     };
+    (nodeGen as NodeGen).node = node;
+    return node;
   };
+  return nodeGen;
+};
 
 /**
  * buffer: [0, 0, 0, 1, 1, 1] (w/ shape [3,2]) accessed originally as [0,0,0],[1,1,1]

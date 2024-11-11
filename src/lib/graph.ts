@@ -97,8 +97,9 @@ export class TensorGraph {
       const code = c.generateKernel();
       c.kernelCode = code;
     }
+    console.log("all contexts=", allContexts);
     // brute force remaining contexts via dependencies...
-    for (let i = 0; i < allContexts.size * 14; i++) {
+    for (let i = 0; i < allContexts.size * 24; i++) {
       for (const c of allContexts) {
         if (!this.contexts.includes(c)) {
           if (everyDependencyMet(c, this.contexts, true)) {
@@ -220,16 +221,6 @@ export class TensorGraph {
               const sourceBuffer = prevOutputs.get(slicedInputName)!;
               const destBuffer = kernel.getInputBuffer(inputName)!;
               let len = this.inputData.get(inputName)?.length || this.outputSize;
-              /*
-              console.log(
-                "intermediate len =%s inputName=%s",
-                len,
-                inputName,
-                this.inputData.get(inputName),
-                destBuffer,
-                sourceBuffer,
-              );
-              */
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
                 0,
@@ -238,16 +229,11 @@ export class TensorGraph {
                 len * Float32Array.BYTES_PER_ELEMENT,
               );
               const k = kernels[j];
-
-              //waiting++;
               const r = async () => await logBuffer(this.device, sourceBuffer); //.then((r) => {
-              //waiting--;
-              // TODO - find the exact ASTNode that matches this output...
               if (k.context) {
-                const astNodes = k.context?.nodes.filter((n) => n.variable === inputName) || [];
+                const astNodes = k.context?.nodes; //.filter((n) => n.variable === inputName) || [];
                 for (const node of astNodes) {
                   node.result = r;
-                  //console.log("setting result for %s", inputName, node, r);
                 }
               }
               //});
@@ -399,7 +385,7 @@ async function logBuffer(device: GPUDevice, buffer: GPUBuffer) {
 
 const everyDependencyMet = (
   context: Context<ASTNode>,
-  contexts: Context<ASTNode>[],
+  previousContexts: Context<ASTNode>[],
   lazy = false,
 ) => {
   for (const input of context.inputs.keys()) {
@@ -407,7 +393,7 @@ const everyDependencyMet = (
       continue;
     }
     if (
-      !contexts.some((c) => {
+      !previousContexts.some((c) => {
         return c.outputs.has(input + "_out");
       })
     ) {
@@ -419,7 +405,7 @@ const everyDependencyMet = (
   }
   for (const input of context.lazyInputs) {
     if (
-      !contexts.some((c) => {
+      !previousContexts.some((c) => {
         return c.intermediateOutputs.includes(input);
       })
     ) {

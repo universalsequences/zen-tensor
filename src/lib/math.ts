@@ -228,7 +228,7 @@ let ${variableName} = ${forward(toScalar(_freq))};
       (node: ASTNode, gradOut: string) => {
         const inputVar = node.dependencies[0].variable;
         const gradientCode = `
-let grad_${inputVar} = ${gradOut} * ${derivative(toScalar(node.dependencies[0]))};
+let grad_${inputVar} = ${gradOut} * ${derivative(toScalar(node.dependencies[0], undefined, true))};
         `;
         return {
           code: gradientCode,
@@ -252,6 +252,6 @@ export const pow2 = func(
 ); // For x^2
 export const pow3 = func(
   "pow3",
-  (x: sttring) => `pow(${x}, 3)`,
+  (x: string) => `pow(${x}, 3)`,
   (x: string) => `3.0 * pow(${x}, 2)`,
 ); // For x^3

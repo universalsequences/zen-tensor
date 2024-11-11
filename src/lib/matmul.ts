@@ -14,9 +14,6 @@ export const matmul = (a: Arg, b: Arg) =>
       const _b = context.gen(b);
       const shapeA = getShape(_a); //.shape;
       const shapeB = getShape(_b); //.shape;
-      console.log("mat mul _a and _b", _a, _b);
-      console.log("shapeA", shapeA, _a);
-      console.log("shapeB", shapeB);
       // Check if shapes are compatible for matrix multiplication
       if (shapeA.length !== 2 || shapeB.length !== 2 || shapeA[1] !== shapeB[0]) {
         throw new Error(`Incompatible shapes for matrix multiplication: ${shapeA} and ${shapeB}`);
@@ -46,9 +43,6 @@ for (var k = 0u; k < ${K}; k = k + 1u) {
 }
 let ${resultVar} = ${sum};
       `;
-      if (sum === "sum_matmul13") {
-        console.log("emitting sum matmul 13 wth _a and _b", _a, _b, resultVar, code, context);
-      }
       return context.emit("matmul", resultVar, code, OpType.Reduction, outputShape, _a, _b);
     },
     // Back Propagation

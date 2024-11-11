@@ -1,7 +1,7 @@
 import { Context } from "./context";
 import { trimIndex, v } from "./math";
 import { memo } from "./memo";
-import { Arg, ASTNode, OpType } from "./zen";
+import { Arg, ASTNode, intermediate, OpType } from "./zen";
 
 const epsilon = 1e-7; // Small value to prevent log(0)
 
@@ -33,9 +33,9 @@ export const binaryCrossEntropy = (predicted: Arg, actual: Arg) =>
       );
     },
     (node: ASTNode, gradOut: string) => {
-      const predictedVar = node.dependencies[0].variable; // Variable for predicted output from forward pass
+      let predictedVar = node.dependencies[0]; // Variable for predicted output from forward pass
       const actualVar = node.dependencies[1].variable; // Variable for actual labels from forward pass
-      const clampedPredictedVar = `clamp(${predictedVar}[index], 1e-7, 1.0 - 1e-7)`;
+      const clampedPredictedVar = `clamp(${intermediate(predictedVar)}[index], 1e-7, 1.0 - 1e-7)`;
 
       // Gradient with respect to the predicted output
       const gradPredictedCode = `

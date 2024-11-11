@@ -36,7 +36,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     // Skip if node has already been visited
     if (visited.has(node)) return;
     visited.add(node);
-    if (node.context !== finalNode.context) {
+    if (node.context !== finalNode.context || inputs.length > 4) {
       if (node.variable.includes("cross")) {
         crossNodes.add(node);
       }
@@ -61,11 +61,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       const re = node.backprop(gradOut);
       const { code: backpropCode, intermediateVariables } = re;
       if (intermediateVariables) {
-        console.log(
-          "adding intermediate variables for backdropCode",
-          backpropCode,
-          intermediateVariables,
-        );
         for (let inter of intermediateVariables) {
           if (!inputs.includes(inter)) {
             inputs.push(inter);
@@ -112,11 +107,14 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   }
 
   for (const init of gradientInitializations) {
+    if (backwardCode.includes(`let ${init}`)) continue;
     if (!saved.has(init)) initializations += `var ${init} = 0.0;\n`;
     if (inputs.includes(init)) {
       inputs = inputs.filter((x) => x !== init);
     }
   }
+
+  const inputsCode = inputs.map((input, index) => constructGroup(index, "read", input)).join("\n");
 
   // Generate output code for leaf nodes (inputs)
   const visitedInputs = new Set<string>();
@@ -124,8 +122,10 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     if (!visitedInputs.has(node.variable)) {
       visitedInputs.add(node.variable);
       const output = `grad_${node.variable}_output`;
-      outputs.push(output);
-      outputCode += ` if (index < ${shapeToSize(getShape(node))}){ ${output}[index] = ${node.gradientVariable}; } \n`;
+      if (!inputsCode.includes(output)) {
+        outputs.push(output);
+        outputCode += ` if (index < ${shapeToSize(getShape(node))}){ ${output}[index] = ${node.gradientVariable}; } \n`;
+      }
     }
   });
 
@@ -138,8 +138,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     }
   });
 
-  const inputsCode = inputs.map((input, index) => constructGroup(index, "read", input)).join("\n");
-  const outputsCode = outputs
+  const outputsCode = Array.from(new Set(outputs))
     .map((output, index) => constructGroup(inputs.length + index, "read_write", output))
     .join("\n");
 

@@ -49,16 +49,18 @@ export interface ASTNode {
  * Used to convert a piece of data into a scalar representation (as a codegen string)
  *
  * */
-export const toScalar = (data: ASTNode, index?: string) => {
-  if (data.type === DataType.Tensor) {
+export const toScalar = (data: ASTNode, index?: string, needsIntermediate?: boolean) => {
+  const variable = needsIntermediate ? intermediate(data) : data.variable;
+  if (data.type === DataType.Tensor || needsIntermediate) {
     if (index !== undefined) {
-      return `${data.variable}[${index}]`;
+      return `${variable}[${index}]`;
     } else {
-      return `${data.variable}[index]`;
+      return `${variable}[index]`;
     }
   }
-  return data.variable;
+  return variable;
 };
 
 export const intermediate = (a: ASTNode) => intermediateVar(a.variable);
-export const intermediateVar = (a: string) => `${a}_intermediate`;
+export const intermediateVar = (a: string) =>
+  a.endsWith("_intermediate") ? a : `${a}_intermediate`;

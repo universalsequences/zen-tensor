@@ -166,21 +166,21 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = scaleClassifier(g);
+    const epochRunner = xorPredictor(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);
 
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 20000; i++) {
       const a = new Date().getTime();
       const { learningTime, computation, loss, tensors, gradients, forward, predicition } =
-        await epochRunner(0.01);
+        await epochRunner(0.1);
       const b = new Date().getTime();
       if (computation) {
         setComputation(computation);
       }
 
-      if (i % 10 !== 0) {
+      if (i % 2 !== 0) {
         continue;
       }
       console.log("epoch took %s ms learning took %s ms ", b - a, learningTime);
@@ -188,6 +188,7 @@ const TensorPage: React.FC = () => {
       setEpoch(i);
       setLoss(loss);
       if (predicition) {
+        console.log(predicition);
         setResult(predicition);
       }
       setGrads(gradients);
@@ -265,7 +266,7 @@ const TensorPage: React.FC = () => {
 
     // Training loop
     let learningRate = 0.01;
-    for (let i = 0; i < 20000; i++) {
+    for (let i = 0; i < 20; i++) {
       const { forward, gradients } = await g.run();
 
       W1.learn(learningRate);
@@ -389,7 +390,7 @@ const TensorPage: React.FC = () => {
       // console.log("layer1", layer1.node);
 
       // Training loop
-      const numEpochs = 10000;
+      const numEpochs = 20;
       const learningRate = 0.01;
 
       setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));

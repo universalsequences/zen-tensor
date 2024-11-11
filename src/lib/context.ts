@@ -110,20 +110,12 @@ export class KernelContext implements Context<ASTNode> {
     }
 
     const result = (x as Gen)(this);
-
-    if (result.variable === "div_result11") {
-      console.log("were handling div_result11!", result);
-    }
-
     if (result.opType === OpType.Reshape) {
       return result;
     }
 
     const children = this.getAllChildren();
 
-    if (result.variable === "div_result11") {
-      console.log("were handling div_result11!", children, [...this.usedVariables]);
-    }
     if (
       !this.usedVariables.includes(result.variable) &&
       children.some((p) => p.usedVariables.includes(result.variable))
@@ -133,10 +125,6 @@ export class KernelContext implements Context<ASTNode> {
       this.lazyInputShapes.set(result.variable, result.shape);
       result.variable += "_intermediate";
       result.type = DataType.Tensor;
-
-      if (result.variable === "div_result11") {
-        console.log("adding intermediate to were handling div_result11!");
-      }
     }
 
     return result;
@@ -182,7 +170,7 @@ export class KernelContext implements Context<ASTNode> {
   }
 
   useContext(opType: OpType): Context<ASTNode> {
-    if (2 * this.usedVariables.length + this.inputs.size + this.outputs.size >= MAX_BUFFERS) {
+    if (2 * this.usedVariables.length + this.inputs.size /*+ this.outputs.size */ >= MAX_BUFFERS) {
       // we need to ensure that this does not create a backward pass kernel with over 8 buffers
       return new KernelContext(opType, this.tensorGraph, this);
     }
