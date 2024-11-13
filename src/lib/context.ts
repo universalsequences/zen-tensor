@@ -13,6 +13,7 @@ import { TensorGraph } from "./graph";
 import { constructGroup, shapeToSize } from "./utils";
 import { BackwardContext } from "./back";
 import { numberOp } from "./number";
+import { WORKGROUP_SIZE } from "@/constants/kernel";
 
 let contextIdx = 1;
 
@@ -175,7 +176,7 @@ export class KernelContext implements Context<ASTNode> {
     ...dependencies: ASTNode[]
   ): ASTNode {
     const gradientVariable = `grad_${variable}`;
-    let astNode = {
+    const astNode = {
       operation,
       context: this,
       gradientVariable,
@@ -273,7 +274,7 @@ export class KernelContext implements Context<ASTNode> {
 ${inputBindings}
 ${outputBindings}
 
-      @compute @workgroup_size(64)
+      @compute @workgroup_size(${WORKGROUP_SIZE})
       fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let index = global_id.x;
 ${code}

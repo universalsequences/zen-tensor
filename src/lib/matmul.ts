@@ -1,14 +1,14 @@
 import { memo } from "./memo";
-import { Context } from "./context";
-import { OpType, ASTNode, Arg, toScalar } from "./zen";
+import type { Context } from "./context";
+import { OpType, type ASTNode, type Arg, toScalar } from "./zen";
 import { emitIntermediate } from "./utils";
 import { getIndex, getShape } from "./reshape";
 
 export const matmul = (a: Arg, b: Arg) =>
   memo(
     // Forward Pass
-    (context: Context<ASTNode>): ASTNode => {
-      context = context.useContext(OpType.Reduction);
+    (_context: Context<ASTNode>): ASTNode => {
+      const context = _context.useContext(OpType.Reduction);
       const _a = context.gen(a);
       const _b = context.gen(b);
       const shapeA = getShape(_a); //.shape;

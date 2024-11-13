@@ -5,6 +5,7 @@ import { Tensor } from "./tensor";
 import { backpass } from "./back";
 import { shapeToSize } from "./utils";
 import { getShape } from "./reshape";
+import { WORKGROUP_SIZE } from "@/constants/kernel";
 
 export interface GraphResult {
   forward: Float32Array;
@@ -198,7 +199,6 @@ export class TensorGraph {
    * @returns the result of the computation
    * */
   async run(): Promise<GraphResult> {
-    const WORKGROUP_SIZE = 64; // should match shader's workgroup size
     const commandEncoder = this.device.createCommandEncoder();
 
     // execute each kernel, passing data required by each kernel, from other kernels

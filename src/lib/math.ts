@@ -199,7 +199,7 @@ ${dep.gradientVariable} += 2.0 * ${gradOut}*${v(otherDep)}
       return {
         code,
         intermediateVariables: [gradOut, v(otherDep)],
-        gradientOutputs: [dep.gradientVariable],
+        gradientOutputs: i === 0 ? [dep.gradientVariable] : [dep.gradientVariable],
       };
     }
   });
@@ -209,21 +209,20 @@ export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
   grad(node, gradOut, (dep, i) => {
     if (i === 0) {
       // Gradient for the first operand (dividend)
-      const code = `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])};\n`;
+      const code = `${dep.gradientVariable} += ${gradOut} / ${v(node.dependencies[1])}; // divide A \n`;
       return {
         code,
         intermediateVariables: [gradOut, v(node.dependencies[i])],
         gradientOutputs: [dep.gradientVariable],
       };
-    } else {
-      // Gradient for the second operand (divisor)
-      const code = `${dep.gradientVariable} += -${gradOut} * ${v(node.dependencies[0])} / (${v(dep)} * ${v(dep)});\n`;
-      return {
-        code,
-        intermediateVariables: [gradOut, v(node.dependencies[0]), v(dep)],
-        gradientOutputs: [dep.gradientVariable],
-      };
     }
+    // Gradient for the second operand (divisor)
+    const code = `${dep.gradientVariable} += -${gradOut} * ${v(node.dependencies[0])} / (${v(dep)} * ${v(dep)}); // divide B \n`;
+    return {
+      code,
+      intermediateVariables: [gradOut, v(node.dependencies[0]), v(dep)],
+      gradientOutputs: [dep.gradientVariable],
+    };
   }),
 );
 

@@ -58,9 +58,8 @@ export const toScalar = (data: ASTNode, index?: string, needsIntermediate?: bool
   if (data.type === DataType.Tensor || needsIntermediate) {
     if (index !== undefined) {
       return `${variable}[${index}]`;
-    } else {
-      return `${variable}[index]`;
     }
+    return `${variable}[index]`;
   }
   return variable;
 };

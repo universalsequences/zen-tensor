@@ -67,13 +67,13 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = simpleTransformer(g);
+    const epochRunner = mediumTransformer(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);
-
-    let learningRate = 0.01;
-    for (let i = 0; i < 2; i++) {
+    let finalCounter = 0;
+    let learningRate = 0.1;
+    for (let i = 0; i < 2000; i++) {
       const a = new Date().getTime();
       const { learningTime, computation, loss, tensors, gradients, predicition } =
         await epochRunner(learningRate);
@@ -86,8 +86,15 @@ const TensorPage: React.FC = () => {
         continue;
       }
 
-      if (loss < 0.15 && learningRate > 0.01) {
+      if (loss < 0.7 && learningRate > 0.01) {
         learningRate *= 0.99;
+      }
+
+      if (loss < 0.01) {
+        finalCounter++;
+        if (finalCounter > 2) {
+          break;
+        }
       }
       console.log("epoch took %s ms learning took %s ms ", b - a, learningTime);
       setTensors(tensors);

@@ -1,6 +1,6 @@
-import { BGen } from "./back";
-import { Context } from "./context";
-import { Arg, ASTNode, PartialGen, NodeGen } from "./zen";
+import type { BGen } from "./back";
+import type { Context } from "./context";
+import type { Arg, ASTNode, PartialGen, NodeGen } from "./zen";
 
 export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
   let memoized: ASTNode | undefined = undefined;

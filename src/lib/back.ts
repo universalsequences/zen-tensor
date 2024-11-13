@@ -13,6 +13,7 @@ export interface BackwardContext {
 }
 
 export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[] => {
+  console.log("backpass finalNode=", finalNode.variable, gradInit);
   const otherKernels: BackwardContext[] = [];
   let backwardCode = "";
   let outputCode = "";
@@ -28,6 +29,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
 
   // Recursive function to generate backward code, processing the current node first
   const generateBackwardCode = (node: ASTNode, gradOut: string): void => {
+    console.log("generateBackwardCode node=", node.variable, gradOut);
     // Skip if node has already been visited
     if (visited.has(node)) return;
     visited.add(node);
@@ -68,7 +70,6 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
             inputs.push(inter);
           }
         }
-        //inputs.push(...intermediateVariables);
       }
       if (backpropCode.includes(intermediate(node))) {
         inputs.push(intermediate(node));
@@ -81,7 +82,9 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
 
     // Process dependencies (children) after processing the current node
     for (const dep of node.dependencies) {
-      const output = `grad_${node.variable}_output`;
+      const output = node.variable.includes("intermediate")
+        ? `grad_${node.variable}_output`
+        : `grad_${node.variable}_intermediate_output`;
       generateBackwardCode(dep, `${output}[index]`);
     }
   };
@@ -130,19 +133,22 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   }
 
   for (const gradientOutput of gradientOutputs) {
-    const output =
-      finalNode.gradientVariable === gradientOutput && gradInit === "1.0"
-        ? `${gradientOutput}_output`
-        : `${gradientOutput}_intermediate_output`;
-    if (finalNode?.gradientVariable === gradientOutput) {
-      console.log("FINAL NODE MATCH", gradientOutput, gradInit);
-    }
-    console.log("adding gradient output", output, finalNode);
+    const output = `${gradientOutput}_intermediate_output`;
+
     outputs.push(output);
     const l = Array.from(visited);
     const node = l.find((x) => output.startsWith(x.gradientVariable));
     if (node) {
       // VERY IMPORTANT: ensure that we write w/in bounds, or else we might corrupt adjacent buffers!
+      console.log(
+        "size of node=",
+        node.variable,
+        output,
+        gradientOutput,
+        getShape(node),
+        shapeToSize(getShape(node)),
+        node,
+      );
       outputCode += ` if (index < ${shapeToSize(getShape(node))}){  ${output}[index] = ${gradientOutput}; } \n`;
     } else {
       outputCode += ` ${output}[index] = ${gradientOutput}; \n`;
