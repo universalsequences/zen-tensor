@@ -14,6 +14,7 @@ export const matmul = (a: Arg, b: Arg) =>
       const _b = context.gen(b);
       const shapeA = getShape(_a); //.shape;
       const shapeB = getShape(_b); //.shape;
+      console.log("matmul", _a, _b);
       // Check if shapes are compatible for matrix multiplication
       if (shapeA.length !== 2 || shapeB.length !== 2 || shapeA[1] !== shapeB[0]) {
         throw new Error(`Incompatible shapes for matrix multiplication: ${shapeA} and ${shapeB}`);

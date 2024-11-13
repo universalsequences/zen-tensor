@@ -1,4 +1,13 @@
-import { ASTNode, Arg, OpType, Gen, DataType, toScalar, intermediateVar } from "./zen";
+import {
+  ASTNode,
+  Arg,
+  OpType,
+  Gen,
+  DataType,
+  toScalar,
+  intermediateVar,
+  intermediate,
+} from "./zen";
 import { Tensor } from "./tensor";
 import { TensorGraph } from "./graph";
 import { constructGroup, shapeToSize } from "./utils";
@@ -51,6 +60,7 @@ export type Context<T> = BaseContext<T> & {
   size: number;
   shape?: number[];
   tensorGraph: TensorGraph;
+  getReference: (x: ASTNode) => string;
 };
 
 /**
@@ -83,6 +93,20 @@ export class KernelContext implements Context<ASTNode> {
     this.id = contextIdx++;
     if (parentContext) {
       parentContext.children.push(this);
+    }
+  }
+
+  getReference(node: ASTNode) {
+    if (node.type === DataType.Tensor) {
+      // grabbing a tensor buffer as is
+      return toScalar(node);
+    }
+
+    if (node.context !== this) {
+      // we are grabbing a reference from a different kernel
+      return `${intermediate(node)}[index]`;
+    } else {
+      return `${node.variable}`;
     }
   }
 

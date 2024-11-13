@@ -58,9 +58,9 @@ export const leakyRelu = (x: Arg, alpha: number = 0.01) =>
       const [res] = context.useVariables(`leaky_relu_result`);
       const _x = context.gen(x);
       let code = `let ${res} = select(
-${alpha} * ${v(_x)},
-${v(_x)},
-${v(_x)} > 0.0);`;
+${alpha} * ${context.getReference(_x)},
+${context.getReference(_x)},
+${context.getReference(_x)} > 0.0);`;
       return context.emit("leakyRelu", res, code, OpType.Regular, getShape(_x), _x);
     },
     (node: ASTNode, gradOut: string) => {
@@ -78,7 +78,7 @@ ${gradOut}, ${v(node.dependencies[0])} > 0.0);
     alpha,
   );
 
-export const softmax = (input: ASTNode) =>
+export const softmax = (input: Arg) =>
   memo(
     (c: Context<ASTNode>) => {
       // Forward Pass
@@ -114,8 +114,8 @@ let ${res} = exp(${toScalar(_input)} - ${max}) / ${sum};
 
       const gradCode = `
 for (var i = 0u; i < ${len}u; i++) {
-  let kronecker_delta = (i == index) ? 1.0 : 0.0;
-  ${node.gradientVariable} += ${gradOut} * ${softmaxVar}[i] * (kronecker_delta - ${softmax}[index]);
+let kronecker_delta = select(0.0, 1.0, i == index);
+  ${node.gradientVariable} += ${gradOut} * ${softmaxVar}[i] * (kronecker_delta - ${softmaxVar}[index]);
 }
 `;
 
@@ -134,7 +134,7 @@ export const tanh = (x: Arg) =>
       const [res] = context.useVariables(`tanh_result`);
       const _x = context.gen(x);
       let code = `
-        let exp2x = exp(2.0 * ${v(_x)});
+        let exp2x = exp(2.0 * ${context.getReference(_x)});
         let ${res} = (exp2x - 1.0) / (exp2x + 1.0);
       `;
       return context.emit("tanh", res, code, OpType.Regular, getShape(_x), _x);

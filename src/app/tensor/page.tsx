@@ -27,6 +27,7 @@ import { shapeNoiseClassifier } from "@/examples/shape-noise";
 import { stripesClassifier } from "@/examples/spiral";
 import { scaleClassifier } from "@/examples/circleBatchNN";
 import { sineLearner } from "@/examples/sine";
+import { simpleTransformer } from "@/examples/transformer";
 
 const bin = (predictions: number[], targets: Float32Array) => {
   return predictions.map((p, i) => {
@@ -66,7 +67,7 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = sineLearner(g);
+    const epochRunner = simpleTransformer(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);

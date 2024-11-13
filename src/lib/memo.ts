@@ -10,7 +10,9 @@ export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
         0,
         memoized.variable.length - "_intermediate".length,
       );
-      context.lazyInputs.push(variable);
+      if (!context.lazyInputs.includes(variable)) {
+        context.lazyInputs.push(variable);
+      }
       context.lazyInputShapes.set(variable, memoized.shape);
       return memoized;
     }

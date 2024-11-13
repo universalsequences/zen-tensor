@@ -6,7 +6,7 @@ export const reshape =
   (input: Arg, newShape: number[]) =>
   (context: Context<ASTNode>): ASTNode => {
     return {
-      ...context.gen(input, true),
+      ...context.gen(input),
       shape: newShape,
       opType: OpType.Reshape,
     };

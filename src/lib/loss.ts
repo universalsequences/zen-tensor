@@ -98,3 +98,41 @@ export const meanSquaredError = (predictions: Arg, targets: Arg) =>
     predictions,
     targets,
   );
+
+export const crossEntropy = (predictions: Arg, targets: Arg) =>
+  memo(
+    (context: Context<ASTNode>): ASTNode => {
+      context = context.useContext(OpType.Reduction);
+      const _pred = context.gen(predictions);
+      const _targets = context.gen(targets);
+      const [result] = context.useVariables("cross_entropy_result");
+
+      const code = `
+        // Cross entropy: -sum(target * log(pred))
+        let ${result} = -${v(_targets)} * log(${v(_pred)} + 1e-7);
+      `;
+
+      return context.emit(
+        "cross_entropy",
+        result,
+        code,
+        OpType.Reduction,
+        _pred.shape,
+        _pred,
+        _targets,
+      );
+    },
+    (node: ASTNode, gradOut: string) => {
+      // Gradient of cross entropy with respect to predictions
+      // is (pred - target)
+      const gradCode = `
+        ${node.gradientVariable} = ${gradOut} * (${v(node.dependencies[0])} - ${v(node.dependencies[1])});
+      `;
+      return {
+        code: gradCode,
+        intermediateVariables: emitIntermediate(node),
+      };
+    },
+    predictions,
+    targets,
+  );

@@ -116,7 +116,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
   grad(node, gradOut, (dep, i, isBroadcasting, shapes) => {
     if (!isBroadcasting) {
       return {
-        code: `${dep.gradientVariable} += ${gradOut};\n`,
+        code: `${dep.gradientVariable} += ${gradOut};\n // add grad`,
         intermediateVariables: [gradOut],
       };
     } else {
@@ -137,7 +137,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
           let intermediate = `grad_${node.parent?.variable}_output`;
           return {
             code: `
-              // broadcast
+              // add grad broadcast
               let vectorIndex = index % ${vectorSize}u;
               var grad_sum = 0.0;
               for (var i = 0u; i < ${batchSize}u; i = i + 1u) {

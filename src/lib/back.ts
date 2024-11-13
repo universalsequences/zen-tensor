@@ -36,7 +36,8 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     // Skip if node has already been visited
     if (visited.has(node)) return;
     visited.add(node);
-    if (node.context !== finalNode.context || inputs.length > 4) {
+    if (node.context !== finalNode.context) {
+      // context switched or the inputs have grown more than 4  and we should partition the kernel
       if (node.variable.includes("cross")) {
         crossNodes.add(node);
       }
