@@ -40,6 +40,7 @@ export interface ASTNode {
   ) => {
     code: string;
     intermediateVariables: string[];
+    gradientOutputs: string[];
   };
   gradientVariable: string; // New field for gradient variable
   parent?: ASTNode;
@@ -67,3 +68,9 @@ export const toScalar = (data: ASTNode, index?: string, needsIntermediate?: bool
 export const intermediate = (a: ASTNode) => intermediateVar(a.variable);
 export const intermediateVar = (a: string) =>
   a.endsWith("_intermediate") ? a : `${a}_intermediate`;
+
+export interface BackPropagationOutput {
+  code: string;
+  intermediateVariables: string[];
+  gradientOutputs: string[];
+}

@@ -62,6 +62,7 @@ let ${resultVar} = ${sum};
       const aVar = node.dependencies[0].variable;
       const bVar = node.dependencies[1].variable;
       const gradCode = `
+// gradient starting from node = ${node.variable} --- deps: ${node.dependencies.map((x) => x.variable).join("+")}
 let ${M} = ${getShape(node.dependencies[0])[0]}u;
 let ${N} = ${getShape(node.dependencies[1])[1]}u;
 let ${K} = ${getShape(node.dependencies[0])[1]}u;
@@ -92,9 +93,11 @@ ${node.dependencies[1].gradientVariable} = grad_b_sum;
               new Set([parentGrad.slice(0, parentGrad.indexOf("[")), ...emitIntermediate(node)]),
             )
           : emitIntermediate(node);
+
       return {
         code: gradCode,
-        intermediateVariables: intermediateVariables, //emitIntermediate(node),
+        intermediateVariables: intermediateVariables,
+        gradientOutputs: node.dependencies.map((x) => x.gradientVariable),
       };
     },
     a,

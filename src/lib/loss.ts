@@ -39,19 +39,10 @@ export const binaryCrossEntropy = (predicted: Arg, actual: Arg) =>
       const clampedPredictedVar = `clamp(${intermediate(predictedVar)}[index], 1e-7, 1.0 - 1e-7)`;
 
       // Gradient with respect to the predicted output
-      const gradPredictedCode = `
-${node.gradientVariable} = (y_pred - y_true) / (y_pred * (1.0 - y_pred));
-`;
-
-      // We'll remove the gradient calculation for actual labels as it's not needed for backpropagation
-      const gradActualCode = "";
-
-      // Combine both gradient codes into a single code block
       const code = `
 let y_pred = ${clampedPredictedVar};
 let y_true = ${actualVar}[index];
-${gradPredictedCode}
-${gradActualCode}
+${node.gradientVariable} = (y_pred - y_true) / (y_pred * (1.0 - y_pred));
 `;
       // Return the generated code and any intermediate variables needed for further operations
       return {
@@ -60,6 +51,7 @@ ${gradActualCode}
           trimIndex(v(node.dependencies[0])),
           trimIndex(v(node.dependencies[1])),
         ],
+        gradientOutputs: [node.gradientVariable],
       };
     },
     predicted,
@@ -91,8 +83,7 @@ export const meanSquaredError = (predictions: Arg, targets: Arg) =>
           trimIndex(v(node.dependencies[0])),
           trimIndex(v(node.dependencies[1])),
         ],
-
-        //intermediateVariables: //emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     predictions,
@@ -126,11 +117,13 @@ export const crossEntropy = (predictions: Arg, targets: Arg) =>
       // Gradient of cross entropy with respect to predictions
       // is (pred - target)
       const gradCode = `
+        // cross entropy gradient ${node.variable}
         ${node.gradientVariable} = ${gradOut} * (${v(node.dependencies[0])} - ${v(node.dependencies[1])});
       `;
       return {
         code: gradCode,
         intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     predictions,

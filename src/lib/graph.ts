@@ -207,6 +207,8 @@ export class TensorGraph {
     for (let i = 0; i < kernels.length; i++) {
       const commandEncoder = this.device.createCommandEncoder();
       const currentKernel = kernels[i];
+      console.log("looping kernel=%s", i);
+      let buffers: GPUBuffer[] = [];
 
       // If this is not the first kernel, we need to copy data from the previous kernel
       if (i > 0) {
@@ -246,6 +248,7 @@ export class TensorGraph {
               // we have a direct match between inputName and previous kernel output
               const sourceBuffer = prevOutputs.get(inputName)!;
               const destBuffer = currentKernel.getInputBuffer(inputName)!;
+              console.log("copying buffer=%s from kernel=%s to kernel=%s", inputName, j, i);
 
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
@@ -254,6 +257,7 @@ export class TensorGraph {
                 0,
                 Math.min(sourceBuffer.size, destBuffer.size),
               );
+              buffers.push(sourceBuffer);
               // const r = await logBuffer(this.device, sourceBuffer);
             }
           }
@@ -270,6 +274,10 @@ export class TensorGraph {
 
       // this executes the commands encoded in the commandEncoder: data copies + kernel execution
       this.device.queue.submit([commandEncoder.finish()]);
+      for (const buffer of buffers) {
+        //const r = await logBuffer(this.device, buffer);
+        //console.log("buffer copied had value=", r);
+      }
     }
 
     // run each backpropagation kernel and save the gradients of the outputs,
@@ -284,6 +292,7 @@ export class TensorGraph {
 
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);
+        console.log("getting output buffer for output=%s", output, destBuffer);
         if (destBuffer) {
           const resultBuffer = this.device.createBuffer({
             size: destBuffer.size,
@@ -298,6 +307,7 @@ export class TensorGraph {
           await resultBuffer.mapAsync(GPUMapMode.READ);
           const arrayBuffer = resultBuffer.getMappedRange();
           const resultArray = new Float32Array(arrayBuffer.slice(0));
+          console.log("gradient for ", output, resultArray);
           resultBuffer.unmap();
           resultBuffer.destroy();
           grads.set(output, resultArray);

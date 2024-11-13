@@ -15,10 +15,12 @@ export const executeEpoch =
     tensors,
     graph,
     predictions,
+    entropy,
   }: {
     tensors: Tensor[];
     predictions: NodeGen;
     graph: TensorGraph;
+    entropy?: NodeGen;
   }) =>
   async (learningRate: number): Promise<EpochResult> => {
     const { forward, gradients } = await graph.run();
@@ -33,6 +35,11 @@ export const executeEpoch =
     }
 
     let sum = forward.reduce((a, b) => a + b, 0);
+    if (entropy?.node?.result) {
+      const results = await entropy.node?.result();
+      console.log("loss = ", results);
+      sum = results.reduce((a, b) => a + b, 0);
+    }
     const loss = sum / forward.length;
     let predictionResult;
     if (predictions.node?.result) {

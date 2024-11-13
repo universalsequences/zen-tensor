@@ -55,7 +55,8 @@ export class Tensor {
   }
 
   grad() {
-    return this.graph.gradientData.get(this.name)!;
+    console.log("grad data", this.graph.gradientData);
+    return this.graph.gradientData.get(`${this.name}_intermediate`)!;
   }
 
   val() {
@@ -65,6 +66,8 @@ export class Tensor {
   learn(learningRate: number) {
     const grad = this.grad();
     const val = this.val();
+
+    console.log("learning", this.name, grad, val);
 
     const result = new Float32Array(val.length);
     for (let i = 0; i < result.length; i++) {
@@ -144,7 +147,6 @@ export class Tensor {
 
   gen(): Gen {
     // every context that this is run in should add itself to the inputs there
-
     return (context: Context<ASTNode>) => {
       context.addInput(this.name);
 
@@ -158,28 +160,9 @@ export class Tensor {
         ),
         type: DataType.Tensor,
       };
-      node.backprop = () => ({ code: "", intermediateVariables: [] });
+      node.backprop = () => ({ code: "", gradientOutputs: [], intermediateVariables: [] });
       return node;
     };
-
-    /*
-    return memo(
-      (context: Context<ASTNode>) => {
-        context.addInput(this.name);
-        return {
-          ...context.emit(
-            extractName(this.name) || "tensor",
-            this.name,
-            "",
-            OpType.Regular,
-            this.shape,
-          ),
-          type: DataType.Tensor,
-        };
-      },
-      () => ({ code: "", intermediateVariables: [] }),
-    );
-    */
   }
 }
 

@@ -23,6 +23,7 @@ export const relu = (x: Arg) =>
       return {
         code: gradCode,
         intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     x,
@@ -46,6 +47,7 @@ export const sigmoid = (x: Arg) =>
       return {
         code: gradCode,
         intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     x,
@@ -72,6 +74,7 @@ ${gradOut}, ${v(node.dependencies[0])} > 0.0);
       return {
         code,
         intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     x,
@@ -122,6 +125,7 @@ let kronecker_delta = select(0.0, 1.0, i == index);
       return {
         code: gradCode,
         intermediateVariables: [trimIndex(softmaxVar)],
+        gradientOutputs: [node.gradientVariable],
       };
     },
     input,
@@ -150,6 +154,7 @@ export const tanh = (x: Arg) =>
       return {
         code: gradCode,
         intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
       };
     },
     x,

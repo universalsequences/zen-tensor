@@ -52,13 +52,15 @@ export const xorPredictor = (g: TensorGraph) => {
   const activated = leakyRelu(normalized, 0.1);
   const logits = add(matmul(activated, W2), b2);
   const predictions = sigmoid(logits);
+  const entropy = binaryCrossEntropy(predictions, Y);
 
-  const loss = g.output(binaryCrossEntropy(predictions, Y));
+  const loss = g.output(entropy);
   g.compile(loss, [batchSize]);
 
   return executeEpoch({
     tensors: [W1, gamma1, beta1, W2, b2],
     graph: g,
     predictions,
+    entropy,
   });
 };

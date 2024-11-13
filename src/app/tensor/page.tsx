@@ -27,7 +27,7 @@ import { shapeNoiseClassifier } from "@/examples/shape-noise";
 import { stripesClassifier } from "@/examples/spiral";
 import { scaleClassifier } from "@/examples/circleBatchNN";
 import { sineLearner } from "@/examples/sine";
-import { simpleTransformer } from "@/examples/transformer";
+import { complexTransformer, mediumTransformer, simpleTransformer } from "@/examples/transformer";
 
 const bin = (predictions: number[], targets: Float32Array) => {
   return predictions.map((p, i) => {
@@ -67,15 +67,16 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = simpleTransformer(g);
+    const epochRunner = andPredictor(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);
 
-    for (let i = 0; i < 20000; i++) {
+    let learningRate = 0.01;
+    for (let i = 0; i < 10000; i++) {
       const a = new Date().getTime();
       const { learningTime, computation, loss, tensors, gradients, predicition } =
-        await epochRunner(0.01);
+        await epochRunner(learningRate);
       const b = new Date().getTime();
       if (computation) {
         setComputation(computation);
@@ -83,6 +84,10 @@ const TensorPage: React.FC = () => {
 
       if (i % 2 !== 0) {
         continue;
+      }
+
+      if (loss < 0.15 && learningRate > 0.01) {
+        learningRate *= 0.99;
       }
       console.log("epoch took %s ms learning took %s ms ", b - a, learningTime);
       setTensors(tensors);
@@ -170,7 +175,7 @@ const TensorPage: React.FC = () => {
                   <code style={{ fontSize: 11 }} className="language-wgsl">
                     {code}
                   </code>
-                  <div className="absolute bottom-2 right-2 text-xs">kernel #{i + 1}</div>
+                  <div className="absolute bottom-2 right-2 text-xs">kernel #{i}</div>
                 </pre>
               ))}
             </div>
@@ -183,11 +188,14 @@ const TensorPage: React.FC = () => {
                 <pre
                   style={{ backgroundColor: "#18181b" }}
                   key={i}
-                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1"
+                  className="p-5 text-xs bg-zinc-900 text-zinc-400 m-1 relative"
                 >
                   <code style={{ fontSize: 11 }} className="language-wgsl">
                     {code}
                   </code>
+                  <div className="absolute bottom-2 right-2 text-xs">
+                    kernel #{kernels.length + i}
+                  </div>
                 </pre>
               ))}
             </div>

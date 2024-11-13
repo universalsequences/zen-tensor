@@ -1,5 +1,5 @@
 import { BGen } from "./back";
-import { intermediate } from "./zen";
+import { BackPropagationOutput, intermediate } from "./zen";
 import { Context } from "./context";
 import { memo } from "./memo";
 import { OpType, ASTNode, Arg, DataType } from "./zen";
@@ -71,36 +71,47 @@ const grad = (
     i: number,
     isBroadcasting: boolean,
     shapes: number[][],
-  ) => {
-    code: string;
-    intermediateVariables?: string[];
-  },
+  ) => BackPropagationOutput,
 ) => {
   let code = "";
   let intermediateVariables: string[] = [];
+  let gradientOutputs: string[] = [];
   const visited = new Set<string>();
   const shapes = node.dependencies.map((dep) => getShape(dep));
   const isBroadcasting =
     shapes[0].length !== shapes[1].length || !arraysEqual(shapes[0], shapes[1]);
 
+  console.log("calculating gradients for add", node.variable, node);
+
   for (let i = node.dependencies.length - 1; i >= 0; i--) {
+    console.log("LOOP i=%s", i);
     const dep = node.dependencies[i];
-    if (visited.has(dep.gradientVariable)) continue;
+    if (visited.has(dep.gradientVariable)) {
+      console.log("already visited...");
+      continue;
+    }
     visited.add(dep.gradientVariable);
 
     const grad = customLogic
       ? customLogic(dep, i, isBroadcasting, shapes)
       : { code: `${dep.gradientVariable} += ${gradOut};\n` };
 
+    console.log("grad we got", grad, grad.gradientOutputs);
     code += grad.code;
-    if (grad.intermediateVariables) {
-      intermediateVariables.push(...grad.intermediateVariables);
+    if ((grad as BackPropagationOutput).intermediateVariables) {
+      intermediateVariables.push(...(grad as BackPropagationOutput).intermediateVariables);
+    }
+    if ((grad as BackPropagationOutput).gradientOutputs) {
+      console.log("adding to gradient for add", grad);
+      gradientOutputs.push(...(grad as BackPropagationOutput).gradientOutputs);
     }
   }
 
+  console.log("gradient outputs for add=", gradientOutputs);
   return {
     code,
     intermediateVariables: intermediateVariables.map((x) => trimIndex(x)),
+    gradientOutputs,
   };
 };
 
@@ -118,6 +129,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
       return {
         code: `${dep.gradientVariable} += ${gradOut};\n // add grad`,
         intermediateVariables: [gradOut],
+        gradientOutputs: [dep.gradientVariable],
       };
     } else {
       // Handle broadcasting case
@@ -129,8 +141,9 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
         if (i === 0) {
           // Matrix
           return {
-            code: `${dep.gradientVariable} += ${gradOut};\n`,
+            code: `${dep.gradientVariable} += ${gradOut};\n // matrix i==0`,
             intermediateVariables: [gradOut],
+            gradientOutputs: [dep.gradientVariable, gradOut],
           };
         } else {
           // Vector (bias)
@@ -146,6 +159,7 @@ export const add = binaryOp("add", "+", (node: ASTNode, gradOut: string) =>
               ${dep.gradientVariable} = grad_sum;
             `,
             intermediateVariables: [gradOut],
+            gradientOutputs: [dep.gradientVariable],
           };
         }
       } else {
@@ -178,12 +192,14 @@ ${dep.gradientVariable} += 2.0 * ${gradOut}*${v(otherDep)}
       return {
         code,
         intermediateVariables: [gradOut, v(otherDep)],
+        gradientOutputs: [dep.gradientVariable],
       };
     } else {
       const code = `${dep.gradientVariable} += ${gradOut} * ${v(otherDep)};\n`;
       return {
         code,
         intermediateVariables: [gradOut, v(otherDep)],
+        gradientOutputs: [dep.gradientVariable],
       };
     }
   });
@@ -197,6 +213,7 @@ export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
       return {
         code,
         intermediateVariables: [gradOut, v(node.dependencies[i])],
+        gradientOutputs: [dep.gradientVariable],
       };
     } else {
       // Gradient for the second operand (divisor)
@@ -204,6 +221,7 @@ export const div = binaryOp("div", "/", (node: ASTNode, gradOut: string) =>
       return {
         code,
         intermediateVariables: [gradOut, v(node.dependencies[0]), v(dep)],
+        gradientOutputs: [dep.gradientVariable],
       };
     }
   }),
@@ -233,6 +251,7 @@ let grad_${inputVar} = ${gradOut} * ${derivative(toScalar(node.dependencies[0], 
         return {
           code: gradientCode,
           intermediateVariables: emitIntermediate(node),
+          gradientOutputs: [`grad_${inputVar}`],
         };
       },
       freq,

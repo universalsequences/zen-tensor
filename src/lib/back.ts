@@ -1,15 +1,9 @@
 import { trimIndex, v } from "./math";
 import { getShape } from "./reshape";
 import { constructGroup, shapeToSize } from "./utils";
-import { ASTNode, intermediate, intermediateVar } from "./zen";
+import { ASTNode, BackPropagationOutput, intermediate, intermediateVar } from "./zen";
 
-export type BGen = (
-  node: ASTNode,
-  x: string,
-) => {
-  code: string;
-  intermediateVariables: string[];
-};
+export type BGen = (node: ASTNode, x: string) => BackPropagationOutput;
 
 // everything needed to get the kernel for this
 export interface BackwardContext {
@@ -19,6 +13,7 @@ export interface BackwardContext {
 }
 
 export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[] => {
+  console.log("backpass gradInit=", gradInit);
   let otherKernels: BackwardContext[] = [];
   let backwardCode = "";
   let outputCode = "";
@@ -30,6 +25,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
   const outputs: string[] = [];
   let inputs: string[] = [];
   const saved = new Set<string>();
+  const gradientOutputs: string[] = [];
 
   // Recursive function to generate backward code, processing the current node first
   const generateBackwardCode = (node: ASTNode, gradOut: string): void => {
@@ -61,6 +57,12 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     if (node.backprop) {
       const re = node.backprop(node, gradOut);
       const { code: backpropCode, intermediateVariables } = re;
+      if (re.gradientOutputs) {
+        gradientOutputs.push(...re.gradientOutputs);
+      } else {
+        console.log("no outputs for node.variable", node.variable);
+      }
+
       if (intermediateVariables) {
         for (let inter of intermediateVariables) {
           if (!inputs.includes(inter)) {
@@ -80,19 +82,21 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
 
     // Process dependencies (children) after processing the current node
     node.dependencies.forEach((dep) => {
-      inputNodes.add(node);
+      //inputNodes.add(node);
+      //inputNodes.add(dep);
       const output = `grad_${node.variable}_output`;
       generateBackwardCode(dep, `${output}[index]`);
     });
 
     // Identify input nodes (leaf nodes with no dependencies)
     if (node.dependencies.length === 0) {
-      inputNodes.add(node);
+      //inputNodes.add(node);
     }
   };
 
   // Start with the root of the AST (final operation)
   generateBackwardCode(finalNode, finalNode.gradientVariable);
+  console.log("pre inputs", Array.from(new Set(inputs)));
   inputs = Array.from(new Set(inputs));
 
   if (
@@ -113,9 +117,12 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
     if (inputs.includes(init)) {
       inputs = inputs.filter((x) => x !== init);
     }
+    console.log("looking at init=", init, gradInit);
   }
 
   const inputsCode = inputs.map((input, index) => constructGroup(index, "read", input)).join("\n");
+  console.log("inputs to construct", inputs);
+  console.log(inputsCode);
 
   // Generate output code for leaf nodes (inputs)
   const visitedInputs = new Set<string>();
@@ -124,11 +131,25 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
       visitedInputs.add(node.variable);
       const output = `grad_${node.variable}_output`;
       if (!inputsCode.includes(output)) {
-        outputs.push(output);
-        outputCode += ` if (index < ${shapeToSize(getShape(node))}){ ${output}[index] = ${node.gradientVariable}; } \n`;
+        //outputs.push(output);
+        //outputCode += ` if (index < ${shapeToSize(getShape(node))}){ ${output}[index] = ${node.gradientVariable}; } \n`;
+        //outputCode += ` ${output}[index] = ${node.gradientVariable}; \n`;
       }
     }
   });
+
+  for (const gradientOutput of gradientOutputs) {
+    let output =
+      finalNode.gradientVariable === gradientOutput && gradInit === "1.0"
+        ? `${gradientOutput}_output`
+        : `${gradientOutput}_intermediate_output`;
+    if (finalNode?.gradientVariable === gradientOutput) {
+      console.log("FINAL NODE MATCH", gradientOutput, gradInit);
+    }
+    console.log("adding gradient output", output, finalNode);
+    outputs.push(output);
+    outputCode += ` ${output}[index] = ${gradientOutput}; \n`;
+  }
 
   crossNodes.forEach((node) => {
     if (!visitedInputs.has(node.variable)) {
