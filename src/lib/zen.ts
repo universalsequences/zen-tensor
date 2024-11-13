@@ -34,7 +34,10 @@ export interface ASTNode {
   type: DataType;
   shape: number[]; // [rows, cols] for 2D, [length] for 1D
   transposed?: boolean;
-  backprop?: (x: string) => {
+  backprop?: (
+    node: ASTNode,
+    x: string,
+  ) => {
     code: string;
     intermediateVariables: string[];
   };

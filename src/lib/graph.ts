@@ -117,7 +117,6 @@ export class TensorGraph {
     // NOTE - all contexts call back to the graph to create lazy "buffer" instances w/
     // the data to be used upon intialization
     this.inputData.forEach((data, name) => {
-      //console.log("input data=", data);
       const buffer = this.device.createBuffer({
         size: data.byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -129,7 +128,6 @@ export class TensorGraph {
     // Create forward-pass kernels from each context, generating the final kernel code as well as
     // setting up the binding ports for each kernel
     this.kernels = this.contexts.map((context, index) => {
-      console.log("creating new kernel index=%s", index);
       const code = context.generateKernel();
       context.kernelCode = code;
       const kernel = new Kernel(
@@ -235,7 +233,6 @@ export class TensorGraph {
                 len * Float32Array.BYTES_PER_ELEMENT,
               );
               const r = async () => await logBuffer(this.device, sourceBuffer); //.then((r) => {
-              //console.log("copying over inputName=%s", inputName, await r());
               if (previousKernel.context) {
                 const astNodes = previousKernel.context?.nodes; //.filter((n) => n.variable === inputName) || [];
                 for (const node of astNodes) {
@@ -273,17 +270,6 @@ export class TensorGraph {
 
       // this executes the commands encoded in the commandEncoder: data copies + kernel execution
       this.device.queue.submit([commandEncoder.finish()]);
-
-      // okay so after we run the damn thing lets print every output
-      /*
-      for (const output of currentKernel.outputBuffers.keys()) {
-        const buffer = currentKernel.outputBuffers.get(output);
-        if (buffer) {
-          let result = await logBuffer(this.device, buffer);
-          console.log("post run buffer=%s", output, result);
-        }
-      }
-      */
     }
 
     // run each backpropagation kernel and save the gradients of the outputs,
@@ -295,7 +281,6 @@ export class TensorGraph {
         if (!output.includes("grad")) {
           continue;
         }
-        //console.log("copying data=(output->%s) to gradient kernel", output, kernel);
 
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);

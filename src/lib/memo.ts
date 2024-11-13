@@ -17,7 +17,8 @@ export const memo = (forward: PartialGen, backward: BGen, ...args: Arg[]) => {
       return memoized;
     }
     const node = forward(context, ...args);
-    node.backprop = (gradOut: string) => {
+
+    node.backprop = (node: ASTNode, gradOut: string) => {
       // store backward propagation
       return backward(node, gradOut);
     };

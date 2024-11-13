@@ -234,7 +234,6 @@ export class KernelContext implements Context<ASTNode> {
       .map(([name, index]) => constructGroup(this.inputs.size + index, "read_write", name))
       .join("\n");
 
-    console.log("generating kernel", this, this.code);
     const code = Array.from(new Set(this.code))
       .filter((x) => x !== "")
       .flatMap((c) => c.split("\n"))

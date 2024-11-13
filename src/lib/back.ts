@@ -59,7 +59,7 @@ export const backpass = (finalNode: ASTNode, gradInit = "1.0"): BackwardContext[
 
     // Generate the backpropagation code for the current node
     if (node.backprop) {
-      const re = node.backprop(gradOut);
+      const re = node.backprop(node, gradOut);
       const { code: backpropCode, intermediateVariables } = re;
       if (intermediateVariables) {
         for (let inter of intermediateVariables) {

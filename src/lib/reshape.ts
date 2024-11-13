@@ -1,6 +1,5 @@
 import { Arg, OpType, ASTNode, NodeGen } from "./zen";
 import { Context } from "./context";
-import { memo } from "./memo";
 
 export const reshape =
   (input: Arg, newShape: number[]) =>

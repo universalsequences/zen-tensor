@@ -102,7 +102,7 @@ export const simpleTransformer = (g: TensorGraph) => {
   g.compile(loss, [batchSize]);
 
   return executeEpoch({
-    tensors: [embeddings, Wq, Wk, Wv, Wout, bout],
+    tensors: [Wq, Wk, Wv, Wout, bout],
     graph: g,
     predictions,
   });
