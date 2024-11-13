@@ -67,13 +67,13 @@ const TensorPage: React.FC = () => {
     const device = await adapter.requestDevice();
     const g = new TensorGraph(device);
 
-    const epochRunner = andPredictor(g);
+    const epochRunner = simpleTransformer(g);
 
     setKernels(g.kernels.map((x) => x.context?.kernelCode || ""));
     setBackwards(g.backpasses);
 
     let learningRate = 0.01;
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 2; i++) {
       const a = new Date().getTime();
       const { learningTime, computation, loss, tensors, gradients, predicition } =
         await epochRunner(learningRate);
