@@ -33,7 +33,7 @@ export const sigmoid = (x: Arg) =>
   memo(
     (c: Context<ASTNode>) => {
       const context = c.useContext(OpType.Regular);
-      const [res] = context.useVariables(`sigmoid_result`);
+      const [res] = context.useVariables("sigmoid_result");
       const _x = context.gen(x);
       let code = `let ${res} = 1.0 / (1.0 + exp(-${v(_x)}));`;
       return context.emit("sigmoid", res, code, OpType.Regular, getShape(_x), _x);
@@ -86,42 +86,67 @@ export const softmax = (input: Arg) =>
     (c: Context<ASTNode>) => {
       // Forward Pass
       const context = c.useContext(OpType.Regular);
-      const [res, max, sum] = context.useVariables("softmax", "max", "sum");
+      const [res] = context.useVariables("softmax");
       const _input = context.gen(input);
       const shape = getShape(_input);
-      const len = shape[shape.length - 1]; // Assuming last dimension is the one we're applying softmax to
 
-      let code = `
-// Find max for numerical stability
-var ${max} = ${_input.variable}[0];
-for (var i = 1u; i < ${len}u; i++) {
-  ${max} = max(${max}, ${_input.variable}[i]);
-}
+      const [batchSize, numClasses] = shape.length === 2 ? shape : [1, shape[0]]; // Handle both 1D and 2D cases
+      const len = batchSize * numClasses;
 
-// Compute exp and sum
-var ${sum} = 0.0;
-for (var i = 0u; i < ${len}u; i++) {
-${sum} += exp(${toScalar(_input, "i")} - ${max});
-}
-
-// Compute softmax for this specific index
-let ${res} = exp(${toScalar(_input)} - ${max}) / ${sum};
-`;
+      const code = `
+      let row = index / ${numClasses}u; // Determine the row
+      let col = index % ${numClasses}u; // Determine the column
+  
+      // Compute the maximum value for the current row
+      var max_val = -1e20; // Initialize to a very small number
+      for (var i = 0u; i < ${numClasses}u; i++) {
+        let idx = row * ${numClasses}u + i;
+        max_val = max(max_val, ${_input.variable}[idx]);
+      }
+  
+      // Compute the sum of exponentials for the current row
+      var exp_sum = 0.0;
+      for (var i = 0u; i < ${numClasses}u; i++) {
+        let idx = row * ${numClasses}u + i;
+        exp_sum += exp(${_input.variable}[idx] - max_val);
+      }
+  
+      // Compute the softmax value for the current element
+      var ${res} = 0.0;
+      if (index < ${len}u) {
+        let numerator = exp(${toScalar(_input)} - max_val);
+        ${res} = numerator / exp_sum;
+      }
+    `;
       return context.emit("softmax", res, code, OpType.Regular, getShape(_input), _input);
     },
     (node: ASTNode, gradOut: string) => {
       // Backward Pass
       const softmaxVar = intermediate(node);
       const shape = getShape(node);
-      const len = shape[shape.length - 1];
+
+      const [batchSize, numClasses] = shape.length === 2 ? shape : [1, shape[0]]; // Handle both 1D and 2D cases
+      const len = batchSize * numClasses;
 
       const gradCode = `
-for (var i = 0u; i < ${len}u; i++) {
-let kronecker_delta = select(0.0, 1.0, i == index);
-  ${node.gradientVariable} += ${gradOut} * ${softmaxVar}[i] * (kronecker_delta - ${softmaxVar}[index]);
-}
-`;
-
+      let row = index / ${numClasses}u; // Determine the row
+      let col = index % ${numClasses}u; // Determine the column
+  
+      if (index < ${len}u) {
+        var grad_accumulator = 0.0;
+        var grad_softmax = ${gradOut}; // Gradient of the output wrt loss
+  
+        // Compute the gradient for this thread
+        for (var i = 0u; i < ${numClasses}u; i++) {
+          let idx = row * ${numClasses}u + i;
+          let kronecker_delta = select(0.0, 1.0, i == col);
+          grad_accumulator += grad_softmax * ${softmaxVar}[idx] * (kronecker_delta - ${softmaxVar}[index]);
+        }
+  
+        // Add accumulated gradient
+        grad_softmax += grad_accumulator;
+      }
+    `;
       return {
         code: gradCode,
         intermediateVariables: [trimIndex(softmaxVar)],
@@ -135,9 +160,9 @@ export const tanh = (x: Arg) =>
   memo(
     (c: Context<ASTNode>) => {
       const context = c.useContext(OpType.Regular);
-      const [res] = context.useVariables(`tanh_result`);
+      const [res] = context.useVariables("tanh_result");
       const _x = context.gen(x);
-      let code = `
+      const code = `
         let exp2x = exp(2.0 * ${context.getReference(_x)});
         let ${res} = (exp2x - 1.0) / (exp2x + 1.0);
       `;

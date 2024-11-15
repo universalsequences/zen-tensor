@@ -1,6 +1,6 @@
-import { KernelContext, Context } from "./context";
+import { KernelContext, type Context } from "./context";
 import { Kernel } from "./kernel";
-import { OpType, Arg, Gen, ASTNode, DataType, toScalar } from "./zen";
+import { OpType, type Arg, type Gen, type ASTNode, toScalar } from "./zen";
 import { Tensor } from "./tensor";
 import { backpass } from "./back";
 import { shapeToSize } from "./utils";
@@ -20,9 +20,9 @@ export class TensorGraph {
   inputData: Map<string, Float32Array> = new Map();
   gradientData: Map<string, Float32Array> = new Map();
   inputBuffers: Map<string, GPUBuffer> = new Map();
-  private inputCounter: number = 0;
-  outputSize: number = 0;
-  outputShape: number[] = [1];
+  inputCounter = 0;
+  outputSize = 0;
+  outputShape = [1];
   backpasses: string[] = [];
   tensors: Map<string, Tensor> = new Map();
 
@@ -93,13 +93,13 @@ export class TensorGraph {
 
     traverse(rootNode);
 
-    this.backpasses = backpass(rootNode.dependencies[0]).map((x) => x.code);
+    this.backpasses = backpass(rootNode).map((x) => x.code);
 
     for (const c of allContexts) {
       const code = c.generateKernel();
       c.kernelCode = code;
     }
-    // brute force remaining contexts via dependencies...
+
     for (let i = 0; i < allContexts.size * 24; i++) {
       for (const c of allContexts) {
         if (!this.contexts.includes(c)) {
@@ -207,8 +207,7 @@ export class TensorGraph {
     for (let i = 0; i < kernels.length; i++) {
       const commandEncoder = this.device.createCommandEncoder();
       const currentKernel = kernels[i];
-      console.log("looping kernel=%s", i);
-      let buffers: GPUBuffer[] = [];
+      let buffers: { buffer: GPUBuffer; name: string }[] = [];
 
       // If this is not the first kernel, we need to copy data from the previous kernel
       if (i > 0) {
@@ -241,6 +240,7 @@ export class TensorGraph {
                   node.result = r;
                 }
               }
+              buffers.push({ buffer: sourceBuffer, name: inputName });
             }
 
             // gradient-output case (copying output of gradient kernel to other gradient kernel)
@@ -248,8 +248,6 @@ export class TensorGraph {
               // we have a direct match between inputName and previous kernel output
               const sourceBuffer = prevOutputs.get(inputName)!;
               const destBuffer = currentKernel.getInputBuffer(inputName)!;
-              console.log("copying buffer=%s from kernel=%s to kernel=%s", inputName, j, i);
-
               commandEncoder.copyBufferToBuffer(
                 sourceBuffer,
                 0,
@@ -257,7 +255,7 @@ export class TensorGraph {
                 0,
                 Math.min(sourceBuffer.size, destBuffer.size),
               );
-              buffers.push(sourceBuffer);
+              buffers.push({ buffer: sourceBuffer, name: inputName });
               // const r = await logBuffer(this.device, sourceBuffer);
             }
           }
@@ -274,9 +272,9 @@ export class TensorGraph {
 
       // this executes the commands encoded in the commandEncoder: data copies + kernel execution
       this.device.queue.submit([commandEncoder.finish()]);
-      for (const buffer of buffers) {
+      for (const { buffer, name } of buffers) {
         //const r = await logBuffer(this.device, buffer);
-        //console.log("buffer copied had value=", r);
+        //console.log("buffer copied name=%s with ", name, r);
       }
     }
 
@@ -292,7 +290,6 @@ export class TensorGraph {
 
         const commandEncoder = this.device.createCommandEncoder();
         const destBuffer = kernel.getOutputBuffer(output);
-        console.log("getting output buffer for output=%s", output, destBuffer);
         if (destBuffer) {
           const resultBuffer = this.device.createBuffer({
             size: destBuffer.size,
@@ -307,7 +304,6 @@ export class TensorGraph {
           await resultBuffer.mapAsync(GPUMapMode.READ);
           const arrayBuffer = resultBuffer.getMappedRange();
           const resultArray = new Float32Array(arrayBuffer.slice(0));
-          console.log("gradient for ", output, resultArray);
           resultBuffer.unmap();
           resultBuffer.destroy();
           grads.set(output, resultArray);

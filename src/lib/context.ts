@@ -280,7 +280,9 @@ ${outputBindings}
 ${code}
 
         // intermediate values
+        if (index < ${this.size}) {
 ${intermediateValues}
+  }
       }
     `;
   }

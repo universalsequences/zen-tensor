@@ -55,7 +55,6 @@ export class Tensor {
   }
 
   grad() {
-    console.log("grad data", this.graph.gradientData);
     return this.graph.gradientData.get(`${this.name}_intermediate`)!;
   }
 
@@ -67,16 +66,11 @@ export class Tensor {
     const grad = this.grad();
     const val = this.val();
 
-    console.log("learning", this.name, grad, val);
-
     const result = new Float32Array(val.length);
     for (let i = 0; i < result.length; i++) {
       result[i] = val[i] - learningRate * grad[i];
     }
     this.set(result);
-    if (this.i % 10 === 0) {
-      // console.log("tensor. val/grad", this.name, val, grad);
-    }
     this.i++;
   }
 

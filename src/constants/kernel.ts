@@ -1,1 +1,1 @@
-export const WORKGROUP_SIZE = 256;
+export const WORKGROUP_SIZE = 64;

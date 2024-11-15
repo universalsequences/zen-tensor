@@ -90,18 +90,30 @@ export const meanSquaredError = (predictions: Arg, targets: Arg) =>
     targets,
   );
 
+/*
 export const crossEntropy = (predictions: Arg, targets: Arg) =>
   memo(
-    (context: Context<ASTNode>): ASTNode => {
-      context = context.useContext(OpType.Reduction);
+    (_context: Context<ASTNode>): ASTNode => {
+      const context = _context.useContext(OpType.Reduction);
       const _pred = context.gen(predictions);
       const _targets = context.gen(targets);
       const [result] = context.useVariables("cross_entropy_result");
 
+      // Get batch size and vocab size from shape
+      const batchSize = _pred.shape[0];
+      const vocabSize = _pred.shape[1];
+
       const code = `
-        // Cross entropy: -sum(target * log(pred))
-        let ${result} = -${v(_targets)} * log(${v(_pred)} + 1e-7);
-      `;
+          // Cross entropy: -sum(target * log(pred)) per batch item
+          let batchIndex = index / ${vocabSize}u;
+          let inBatch = batchIndex < ${batchSize}u;
+          var ${result} = 0.0;
+          if (inBatch) {
+            ${result} = -${v(_targets)} * log(${v(_pred)} + 1e-7);
+            // Scale by batch size to normalize gradient
+            ${result} = ${result}; // ${batchSize}.0;
+          }
+        `;
 
       return context.emit(
         "cross_entropy",
@@ -115,11 +127,57 @@ export const crossEntropy = (predictions: Arg, targets: Arg) =>
     },
     (node: ASTNode, gradOut: string) => {
       // Gradient of cross entropy with respect to predictions
-      // is (pred - target)
+      // Scale gradient by batch size for proper normalization
+      const batchSize = node.shape[0];
+      const vocabSize = node.shape[1];
+
       const gradCode = `
-        // cross entropy gradient ${node.variable}
-        ${node.gradientVariable} = ${gradOut} * (${v(node.dependencies[0])} - ${v(node.dependencies[1])});
-      `;
+          // cross entropy gradient ${node.variable}
+          let batchIndex = index / ${vocabSize}u;
+          let inBatch = batchIndex < ${batchSize}u;
+          if (inBatch) {
+            ${node.gradientVariable} = ${gradOut} * (${v(node.dependencies[0])} - ${v(node.dependencies[1])});
+            // Scale by batch size to normalize gradient
+            ${node.gradientVariable} = ${node.gradientVariable}; // ${batchSize}.0;
+          }
+        `;
+
+      return {
+        code: gradCode,
+        intermediateVariables: emitIntermediate(node),
+        gradientOutputs: [node.gradientVariable],
+      };
+    },
+    predictions,
+    targets,
+  );
+  */
+
+export const crossEntropy = (predictions: Arg, targets: Arg) =>
+  memo(
+    (_context: Context<ASTNode>): ASTNode => {
+      const context = _context.useContext(OpType.Reduction);
+      const _pred = context.gen(predictions);
+      const _targets = context.gen(targets);
+      const [result] = context.useVariables("cross_entropy_result");
+      const code = `
+          let ${result} = -${v(_targets)} * log(${v(_pred)} + 1e-7);
+        `;
+      return context.emit(
+        "cross_entropy",
+        result,
+        code,
+        OpType.Reduction,
+        _pred.shape,
+        _pred,
+        _targets,
+      );
+    },
+    (node: ASTNode, gradOut: string) => {
+      const gradCode = `
+          // cross entropy gradient ${node.variable}
+          ${node.gradientVariable} = ${gradOut} * (${v(node.dependencies[0])} - ${v(node.dependencies[1])});
+        `;
       return {
         code: gradCode,
         intermediateVariables: emitIntermediate(node),

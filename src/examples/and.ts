@@ -38,7 +38,7 @@ export const andPredictor = (g: TensorGraph) => {
   const predictions = sigmoid(logits);
 
   // Loss function: Binary Cross-Entropy
-  const loss = g.output(binaryCrossEntropy(predictions, Y));
+  const loss = binaryCrossEntropy(predictions, Y);
 
   // Compile the computation graph
   g.compile(loss, [4]);

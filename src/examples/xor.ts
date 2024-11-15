@@ -1,4 +1,4 @@
-import { TensorGraph, add, matmul, relu, binaryCrossEntropy, sigmoid, leakyRelu } from "@/lib";
+import { type TensorGraph, add, matmul, binaryCrossEntropy, sigmoid, leakyRelu } from "@/lib";
 import { executeEpoch, heInit } from "./core";
 import { batchNorm } from "@/lib/batchnorm";
 
@@ -54,7 +54,7 @@ export const xorPredictor = (g: TensorGraph) => {
   const predictions = sigmoid(logits);
   const entropy = binaryCrossEntropy(predictions, Y);
 
-  const loss = g.output(entropy);
+  const loss = entropy;
   g.compile(loss, [batchSize]);
 
   return executeEpoch({

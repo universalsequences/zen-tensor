@@ -1,4 +1,4 @@
-import { Tensor, NodeGen, TensorGraph, ASTNode } from "@/lib";
+import type { Tensor, NodeGen, TensorGraph, ASTNode } from "@/lib";
 
 export interface EpochResult {
   loss: number;
@@ -16,32 +16,41 @@ export const executeEpoch =
     graph,
     predictions,
     entropy,
+    ignoreZeroLoss = false,
   }: {
     tensors: Tensor[];
     predictions: NodeGen;
     graph: TensorGraph;
     entropy?: NodeGen;
+    ignoreZeroLoss?: boolean;
   }) =>
   async (learningRate: number): Promise<EpochResult> => {
     const { forward, gradients } = await graph.run();
-    let a = new Date().getTime();
+    const a = new Date().getTime();
     for (const tensor of tensors) {
       tensor.learn(learningRate);
     }
-    let b = new Date().getTime();
+    const b = new Date().getTime();
     const tensorResults = new Map<string, Float32Array>();
     for (const [key, tensor] of graph.tensors.entries()) {
       tensorResults.set(key, tensor.val());
     }
 
     let sum = forward.reduce((a, b) => a + b, 0);
+    let loss = sum / forward.length;
     if (entropy?.node?.result) {
       const results = await entropy.node?.result();
-      console.log("loss = ", results);
-      sum = results.reduce((a, b) => a + b, 0);
+      if (ignoreZeroLoss) {
+        const nonZeroResults = results.filter((x) => x !== 0);
+        loss = nonZeroResults.reduce((a, b) => a + b, 0) / nonZeroResults.length;
+        console.log("loss results=", results, nonZeroResults, loss);
+      } else {
+        sum = results.reduce((a, b) => a + b, 0);
+        loss = sum / results.length;
+        console.log("lsos results=", results);
+      }
     }
-    const loss = sum / forward.length;
-    let predictionResult;
+    let predictionResult: number[] | undefined;
     if (predictions.node?.result) {
       predictionResult = await predictions.node.result();
     }
